@@ -6,8 +6,8 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { label: "Home", href: "/" },
   { label: "Accounts", href: "/accounts" },
-  { label: "Finance", href: "/finance" },
-  { label: "Fleet", href: "/fleet" },
+  { label: "Finance", href: null },
+  { label: "Fleet", href: null },
   { label: "Review", href: "/review" },
 ];
 
@@ -19,6 +19,18 @@ export function TopRail() {
       <span className="font-mono text-sm text-ink-4">Stone Transport Ops OS</span>
       <nav className="flex gap-1">
         {TABS.map((tab) => {
+          if (!tab.href) {
+            return (
+              <span
+                key={tab.label}
+                title="Not built yet"
+                className="cursor-not-allowed rounded px-3 py-1.5 text-sm text-ink-3 opacity-40"
+              >
+                {tab.label}
+              </span>
+            );
+          }
+
           const active = tab.href === "/" ? pathname === "/" : pathname.startsWith(tab.href);
           return (
             <Link
