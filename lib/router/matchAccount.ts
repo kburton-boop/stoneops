@@ -108,6 +108,51 @@ export async function getAccountById(id: string, userId: string): Promise<Accoun
   return data;
 }
 
+// Scans free text for any known account name, plant location, or contact
+// name mentioned anywhere in it — used ahead of the single-line classifier
+// (Call Prep detection) where we need "does this reference an account at
+// all", not a single best-guess name to resolve. Deliberately looser than
+// matchAccountDetailed: it returns the first hit rather than requiring
+// uniqueness, since detection just needs a yes/no plus a name to hand to
+// the real resolver later.
+export async function findAccountMentionInText(text: string, userId: string): Promise<AccountMatch | null> {
+  const supabase = getServiceRoleClient();
+  const { data: accounts, error: accountsError } = await supabase
+    .from("accounts")
+    .select("id, name, kind, plant_location")
+    .eq("user_id", userId);
+  if (accountsError) throw accountsError;
+  if (!accounts || accounts.length === 0) return null;
+
+  const haystack = normalize(text);
+  const MIN_LENGTH = 3;
+
+  for (const account of accounts) {
+    const name = normalize(account.name);
+    if (name.length >= MIN_LENGTH && haystack.includes(name)) return toMatch(account);
+    if (account.plant_location) {
+      const location = normalize(account.plant_location);
+      if (location.length >= MIN_LENGTH && haystack.includes(location)) return toMatch(account);
+    }
+  }
+
+  const accountIds = accounts.map((account) => account.id);
+  const { data: contacts, error: contactsError } = await supabase
+    .from("customer_contacts")
+    .select("name, account_id")
+    .in("account_id", accountIds);
+  if (contactsError) throw contactsError;
+
+  for (const contact of contacts ?? []) {
+    const name = normalize(contact.name);
+    if (name.length < MIN_LENGTH || !haystack.includes(name)) continue;
+    const account = accounts.find((a) => a.id === contact.account_id);
+    if (account) return toMatch(account);
+  }
+
+  return null;
+}
+
 export async function findAccountByName(name: string, userId: string): Promise<AccountMatch | null> {
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase

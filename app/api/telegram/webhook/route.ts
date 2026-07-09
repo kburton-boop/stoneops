@@ -7,9 +7,11 @@ import { resolveAccountAndContacts, mergeDraftAccount } from "@/lib/router/resol
 import { routeCapture, type RouteResult } from "@/lib/router/routeCapture";
 import { handleRateRequest } from "@/lib/router/handleRateRequest";
 import { handleBriefRequest } from "@/lib/router/handleBriefRequest";
+import { detectCallPrep } from "@/lib/router/detectCallPrep";
+import { handleCallPrep } from "@/lib/router/handleCallPrep";
 import { setFocus } from "@/lib/userFocus/queries";
 import { transcribeVoice } from "@/lib/transcription/transcribeVoice";
-import { downloadVoice, sendMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
+import { downloadVoice, sendMessage, sendLongMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
 import {
   buildConfirmationText,
   buildCorrectionKeyboard,
@@ -93,6 +95,23 @@ async function handleMessage(message: TelegramMessage) {
   } else if (message.text) {
     text = message.text;
   } else {
+    return;
+  }
+
+  // Call Prep is detected ahead of the normal short-capture classifier —
+  // a long/multi-part message about an account, or an explicit "prep me
+  // for a call with X" trigger, is a fundamentally different shape of
+  // request than a single spoken capture and never goes through
+  // classifyCapture/routeCapture at all.
+  const callPrepDetection = await detectCallPrep(text, userId);
+  if (callPrepDetection.isCallPrep) {
+    try {
+      const result = await handleCallPrep(text, callPrepDetection.accountNameGuess, userId);
+      await sendLongMessage(chatId, result.replyText);
+    } catch (error) {
+      console.error("Call prep generation failed", error);
+      await sendMessage(chatId, "Couldn't generate that call prep — try again in a bit.");
+    }
     return;
   }
 

@@ -164,6 +164,15 @@ type WeeklyReviewsInsert = {
   sealed_at?: string | null;
 }
 
+type CallPrepsInsert = {
+  id?: string;
+  user_id: string;
+  account_id?: string | null;
+  raw_input: string;
+  generated_script: string;
+  created_at?: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -387,6 +396,19 @@ export interface Database {
         };
         Insert: WeeklyReviewsInsert;
         Update: Partial<WeeklyReviewsInsert>;
+        Relationships: [];
+      };
+      call_preps: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string | null;
+          raw_input: string;
+          generated_script: string;
+          created_at: string;
+        };
+        Insert: CallPrepsInsert;
+        Update: Partial<CallPrepsInsert>;
         Relationships: [];
       };
     };

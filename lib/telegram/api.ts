@@ -24,6 +24,42 @@ export function sendMessage(chatId: number, text: string, replyMarkup?: InlineKe
   return callTelegram("sendMessage", { chat_id: chatId, text, reply_markup: replyMarkup });
 }
 
+const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
+
+export function splitIntoChunks(text: string, maxLength: number): string[] {
+  if (text.length <= maxLength) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > maxLength) {
+    // Prefer splitting at a paragraph break, then a line break, then a
+    // space, so a call script this long never arrives chopped mid-word —
+    // only hard-cut at maxLength as a last resort.
+    let splitAt = remaining.lastIndexOf("\n\n", maxLength);
+    if (splitAt <= 0) splitAt = remaining.lastIndexOf("\n", maxLength);
+    if (splitAt <= 0) splitAt = remaining.lastIndexOf(" ", maxLength);
+    if (splitAt <= 0) splitAt = maxLength;
+
+    chunks.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+// Telegram rejects any single message over 4096 characters — a full call
+// prep script routinely runs longer than that. Splits on paragraph/line/
+// word boundaries and sends each piece as its own message, in order,
+// rather than truncating or summarizing further.
+export async function sendLongMessage(chatId: number, text: string): Promise<void> {
+  const chunks = splitIntoChunks(text, TELEGRAM_MAX_MESSAGE_LENGTH);
+  for (const chunk of chunks) {
+    await sendMessage(chatId, chunk);
+  }
+}
+
 export function editMessageText(
   chatId: number,
   messageId: number,

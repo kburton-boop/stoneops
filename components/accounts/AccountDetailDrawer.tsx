@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Drawer } from "@/components/shell/Drawer";
+import { CallPrepsTab } from "@/components/callPreps/CallPrepsTab";
 
 interface AccountDetail {
   account: {
@@ -53,6 +54,7 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingActionId, setDeletingActionId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"overview" | "callPreps">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -134,6 +136,25 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
             )}
           </div>
 
+          <div className="flex gap-1 text-xs">
+            {(["overview", "callPreps"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setTab(option)}
+                className={`min-h-11 rounded px-4 capitalize ${
+                  tab === option ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
+                }`}
+              >
+                {option === "callPreps" ? "Call Preps" : option}
+              </button>
+            ))}
+          </div>
+
+          {tab === "callPreps" && <CallPrepsTab accountId={accountId} />}
+
+          {tab === "overview" && (
+          <>
           <div className="rounded border border-ink-2 p-3">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-medium uppercase tracking-wide text-ink-3">AI Summary</p>
@@ -226,6 +247,8 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
               ))}
             </ul>
           </div>
+          </>
+          )}
         </div>
       )}
     </Drawer>
