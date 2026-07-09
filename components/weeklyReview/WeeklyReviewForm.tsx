@@ -125,14 +125,17 @@ export function WeeklyReviewForm({
           <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-ink-3">
             Accounts to Follow Up With
           </label>
-          <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
             {accounts.map((account) => (
-              <label key={account.id} className="flex items-center gap-2 text-sm text-ink-4">
+              <label
+                key={account.id}
+                className="flex min-h-11 items-center gap-2 rounded px-1 text-sm text-ink-4 hover:bg-ink-2"
+              >
                 <input
                   type="checkbox"
                   checked={fields.accounts_to_follow_up.includes(account.id)}
                   onChange={() => toggleAccount(account.id)}
-                  className="accent-accent"
+                  className="h-5 w-5 shrink-0 accent-accent"
                 />
                 {account.name}
               </label>
@@ -150,7 +153,7 @@ export function WeeklyReviewForm({
           type="button"
           onClick={handleSeal}
           disabled={sealing}
-          className="w-full rounded bg-accent px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
+          className="min-h-11 w-full rounded bg-accent px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
         >
           {sealing ? "Sealing…" : "Seal Week"}
         </button>

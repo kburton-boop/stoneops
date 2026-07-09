@@ -30,7 +30,7 @@ export function AccountsKanbanCard({ accounts }: { accounts: AccountSummaryCard[
               key={option}
               type="button"
               onClick={() => setTab(option)}
-              className={`rounded px-2 py-1 capitalize ${
+              className={`min-h-11 rounded px-3 capitalize ${
                 tab === option ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
               }`}
             >
@@ -55,7 +55,7 @@ export function AccountsKanbanCard({ accounts }: { accounts: AccountSummaryCard[
                       <button
                         type="button"
                         onClick={() => setOpenAccountId(account.id)}
-                        className="w-full rounded border border-ink-2 px-2 py-1 text-left text-sm text-ink-4 hover:border-accent"
+                        className="min-h-11 w-full rounded border border-ink-2 px-2 py-1 text-left text-sm text-ink-4 hover:border-accent"
                       >
                         <span className="block">{account.name}</span>
                         {account.preview && (

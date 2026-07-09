@@ -34,7 +34,7 @@ export function OperatorCard({ initialFocusText }: { initialFocusText: string | 
               type="button"
               onClick={handleClear}
               disabled={clearing}
-              className="mt-1 text-xs text-ink-3 hover:text-ink-4 disabled:opacity-50"
+              className="mt-1 flex min-h-11 items-center rounded px-2 -ml-2 text-xs text-ink-3 hover:text-ink-4 disabled:opacity-50"
             >
               {clearing ? "Clearing…" : "Clear"}
             </button>

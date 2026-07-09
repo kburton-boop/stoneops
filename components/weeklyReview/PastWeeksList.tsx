@@ -12,7 +12,7 @@ export function PastWeeksList({ reviews }: { reviews: WeeklyReviewRow[] }) {
       {reviews.map((review) => (
         <li key={review.id}>
           <details className="rounded border border-ink-2">
-            <summary className="cursor-pointer px-3 py-2 text-sm text-ink-4">
+            <summary className="flex min-h-11 cursor-pointer items-center px-3 py-2 text-sm text-ink-4">
               Week of {review.week_start}
             </summary>
             <div className="space-y-3 border-t border-ink-2 px-3 py-3 text-sm">

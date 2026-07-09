@@ -291,7 +291,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
             setFormulaType(e.target.value as FormulaType);
             setSaved(false);
           }}
-          className="w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 text-sm text-ink-4 outline-none focus:border-accent"
+          className="min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 text-sm text-ink-4 outline-none focus:border-accent"
         >
           <option value="percentage_fsc">Percentage FSC (NTP-G Shear / Nucor Ghent style)</option>
           <option value="per_mile_fsc">Per-mile baseline FSC (RMR style)</option>
@@ -302,24 +302,24 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
         <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-ink-3">
           Mileage lookup
         </label>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <input
             value={origin}
             onChange={(e) => setOrigin(e.target.value)}
             placeholder="Origin, e.g. Ghent, KY"
-            className="min-w-0 flex-1 rounded border border-ink-2 bg-ink-0 px-2 py-1 text-sm text-ink-4 outline-none focus:border-accent"
+            className="min-h-11 min-w-0 flex-1 rounded border border-ink-2 bg-ink-0 px-3 py-1 text-sm text-ink-4 outline-none focus:border-accent"
           />
           <input
             value={destination}
             onChange={(e) => setDestination(e.target.value)}
             placeholder="Destination, e.g. Middletown, OH"
-            className="min-w-0 flex-1 rounded border border-ink-2 bg-ink-0 px-2 py-1 text-sm text-ink-4 outline-none focus:border-accent"
+            className="min-h-11 min-w-0 flex-1 rounded border border-ink-2 bg-ink-0 px-3 py-1 text-sm text-ink-4 outline-none focus:border-accent"
           />
           <button
             type="button"
             onClick={handleLookupDistance}
             disabled={lookingUp || !origin.trim() || !destination.trim()}
-            className="shrink-0 rounded bg-accent px-3 py-1 text-sm font-medium text-ink-0 disabled:opacity-50"
+            className="min-h-11 shrink-0 rounded bg-accent px-3 text-sm font-medium text-ink-0 disabled:opacity-50"
           >
             {lookingUp ? "Looking up…" : "Look up miles"}
           </button>
@@ -327,7 +327,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
         {lookupError && <p className="mt-1 text-xs text-hot">{lookupError}</p>}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {COMMON_FIELDS.map((field) => (
           <div key={field.key}>
             <label className="mb-1 block text-xs text-ink-3">{field.label}</label>
@@ -335,7 +335,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
               type="number"
               value={values[field.key]}
               onChange={(e) => setField(field.key, e.target.value)}
-              className="w-full rounded border border-ink-2 bg-ink-0 px-2 py-1 text-sm text-ink-4 outline-none focus:border-accent"
+              className="min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-1 text-sm text-ink-4 outline-none focus:border-accent"
             />
           </div>
         ))}
@@ -347,7 +347,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
               step="0.001"
               value={values.fsc_percent}
               onChange={(e) => setField("fsc_percent", e.target.value)}
-              className="w-full rounded border border-ink-2 bg-ink-0 px-2 py-1 text-sm text-ink-4 outline-none focus:border-accent"
+              className="min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-1 text-sm text-ink-4 outline-none focus:border-accent"
             />
           </div>
         ) : (
@@ -358,7 +358,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
               step="0.001"
               value={values.baseline_price}
               onChange={(e) => setField("baseline_price", e.target.value)}
-              className="w-full rounded border border-ink-2 bg-ink-0 px-2 py-1 text-sm text-ink-4 outline-none focus:border-accent"
+              className="min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-1 text-sm text-ink-4 outline-none focus:border-accent"
             />
           </div>
         )}
@@ -385,7 +385,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
         type="button"
         onClick={handleSave}
         disabled={!outputs || saving}
-        className="w-full rounded bg-accent px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
+        className="min-h-11 w-full rounded bg-accent px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
       >
         {saving ? "Saving…" : saved ? "Saved ✓" : "Save calculation"}
       </button>
@@ -395,7 +395,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
         type="button"
         onClick={handleSaveDefaults}
         disabled={!canSaveDefaults || savingDefaults}
-        className="w-full rounded border border-ink-2 px-3 py-2 text-sm font-medium text-ink-4 disabled:opacity-50"
+        className="min-h-11 w-full rounded border border-ink-2 px-3 py-2 text-sm font-medium text-ink-4 disabled:opacity-50"
       >
         {savingDefaults ? "Saving…" : defaultsSaved ? "Defaults saved ✓" : "Save as defaults for this account"}
       </button>

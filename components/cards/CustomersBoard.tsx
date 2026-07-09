@@ -23,7 +23,7 @@ function AccountCard({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full rounded border border-ink-2 px-3 py-2 text-left text-sm hover:border-accent"
+      className="min-h-11 w-full rounded border border-ink-2 px-3 py-2 text-left text-sm hover:border-accent"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-ink-4">{account.name}</span>

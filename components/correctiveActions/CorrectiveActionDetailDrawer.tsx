@@ -68,7 +68,7 @@ export function CorrectiveActionDetailDrawer({
             value={vendorInvolved}
             onChange={(e) => setVendorInvolved(e.target.value)}
             onBlur={() => patch({ vendor_involved: vendorInvolved || null })}
-            className="w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 text-sm text-ink-4 outline-none focus:border-accent"
+            className="min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 text-sm text-ink-4 outline-none focus:border-accent"
           />
         </div>
 
@@ -81,7 +81,7 @@ export function CorrectiveActionDetailDrawer({
             onChange={(e) => setResolutionNotes(e.target.value)}
             onBlur={() => patch({ resolution_notes: resolutionNotes || null })}
             rows={4}
-            className="w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 text-sm text-ink-4 outline-none focus:border-accent"
+            className="min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 text-sm text-ink-4 outline-none focus:border-accent"
           />
         </div>
 
@@ -92,7 +92,7 @@ export function CorrectiveActionDetailDrawer({
             type="button"
             onClick={() => patch({ severity: "resolved" })}
             disabled={saving}
-            className="w-full rounded bg-stable px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
+            className="min-h-11 w-full rounded bg-stable px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Mark Resolved"}
           </button>
@@ -101,7 +101,7 @@ export function CorrectiveActionDetailDrawer({
             type="button"
             onClick={() => patch({ severity: "warm" })}
             disabled={saving}
-            className="w-full rounded border border-ink-2 px-3 py-2 text-sm font-medium text-ink-4 disabled:opacity-50"
+            className="min-h-11 w-full rounded border border-ink-2 px-3 py-2 text-sm font-medium text-ink-4 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Reopen"}
           </button>

@@ -49,7 +49,7 @@ export function CorrectiveActionsCard({ items: initialItems }: { items: Correcti
             <button
               type="button"
               onClick={() => setOpenItem(item)}
-              className="flex w-full items-center justify-between gap-3 rounded px-1 py-1 text-left text-sm hover:bg-ink-2"
+              className="flex min-h-11 w-full items-center justify-between gap-3 rounded px-2 py-1 text-left text-sm hover:bg-ink-2"
             >
               <div className="min-w-0">
                 <p className="truncate text-ink-4">{item.title}</p>

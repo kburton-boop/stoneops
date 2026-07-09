@@ -125,7 +125,7 @@ export function CustomerAccountDetailDrawer({
                 key={option}
                 type="button"
                 onClick={() => setTab(option)}
-                className={`rounded px-2 py-1 capitalize ${
+                className={`min-h-11 rounded px-4 capitalize ${
                   tab === option ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
                 }`}
               >
@@ -187,7 +187,7 @@ export function CustomerAccountDetailDrawer({
                             type="button"
                             disabled={savingTopicId === topic.id}
                             onClick={() => toggleTopicStatus(topic.id, topic.status === "open" ? "discussed" : "open")}
-                            className={`rounded px-2 py-0.5 font-mono text-xs uppercase disabled:opacity-50 ${
+                            className={`min-h-11 rounded px-3 font-mono text-xs uppercase disabled:opacity-50 ${
                               topic.status === "open" ? "bg-warm/20 text-warm" : "bg-stable/20 text-stable"
                             }`}
                           >
@@ -197,8 +197,9 @@ export function CustomerAccountDetailDrawer({
                             type="button"
                             onClick={() => handleDeleteTopic(topic.id, topic.title)}
                             disabled={deletingTopicId === topic.id}
+                            aria-label="Delete"
                             title="Delete"
-                            className="rounded px-1 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded text-ink-3 hover:text-hot disabled:opacity-50"
                           >
                             {deletingTopicId === topic.id ? "…" : "✕"}
                           </button>
@@ -212,7 +213,7 @@ export function CustomerAccountDetailDrawer({
                             value={topic.due_date ?? ""}
                             disabled={savingTopicId === topic.id}
                             onChange={(e) => updateDueDate(topic.id, e.target.value)}
-                            className="rounded border border-ink-2 bg-ink-0 px-2 py-1 text-xs text-ink-4 outline-none focus:border-accent disabled:opacity-50"
+                            className="min-h-11 rounded border border-ink-2 bg-ink-0 px-2 text-xs text-ink-4 outline-none focus:border-accent disabled:opacity-50"
                           />
                         </label>
                       ) : (

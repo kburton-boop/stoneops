@@ -141,7 +141,7 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
                 type="button"
                 onClick={refreshSummary}
                 disabled={summaryLoading}
-                className="rounded bg-accent px-2 py-1 text-xs font-medium text-ink-0 disabled:opacity-50"
+                className="min-h-11 rounded bg-accent px-3 text-xs font-medium text-ink-0 disabled:opacity-50"
               >
                 {summaryLoading ? "Generating…" : "Refresh Summary"}
               </button>
@@ -182,8 +182,9 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
                       type="button"
                       onClick={() => handleDeleteAction(ca.id, ca.title)}
                       disabled={deletingActionId === ca.id}
+                      aria-label="Delete"
                       title="Delete"
-                      className="rounded px-1 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded text-ink-3 hover:text-hot disabled:opacity-50"
                     >
                       {deletingActionId === ca.id ? "…" : "✕"}
                     </button>

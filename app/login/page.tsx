@@ -46,13 +46,13 @@ export default function LoginPage() {
           autoFocus
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="mb-4 w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 font-mono text-ink-4 outline-none focus:border-accent"
+          className="mb-4 min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-2 font-mono text-ink-4 outline-none focus:border-accent"
         />
         {error && <p className="mb-4 text-sm text-hot">{error}</p>}
         <button
           type="submit"
           disabled={pending}
-          className="w-full rounded bg-accent px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
+          className="min-h-11 w-full rounded bg-accent px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
         >
           {pending ? "Checking…" : "Enter"}
         </button>

@@ -128,7 +128,7 @@ export function ActivityFeedCard() {
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
-        className="flex w-full items-center justify-between px-4 py-2"
+        className="flex min-h-11 w-full items-center justify-between px-4 py-2"
       >
         <span className="flex items-center gap-2">
           <h2 className="text-xs font-medium uppercase tracking-wide text-ink-3">Activity Feed</h2>
@@ -149,7 +149,7 @@ export function ActivityFeedCard() {
                 key={f.key}
                 type="button"
                 onClick={() => setFilter(f.key)}
-                className={`rounded px-2 py-1 ${
+                className={`min-h-11 rounded px-3 ${
                   filter === f.key ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
                 }`}
               >
@@ -172,7 +172,7 @@ export function ActivityFeedCard() {
                     type="button"
                     onClick={() => handleEntryClick(entry)}
                     disabled={!clickable}
-                    className={`flex min-w-0 flex-1 items-start justify-between gap-3 px-2 py-1.5 text-left text-sm ${
+                    className={`flex min-h-11 min-w-0 flex-1 items-start justify-between gap-3 px-2 py-1.5 text-left text-sm ${
                       clickable ? "" : "cursor-default"
                     }`}
                   >
@@ -203,8 +203,9 @@ export function ActivityFeedCard() {
                     type="button"
                     onClick={() => handleRemoveFromFeed(entry)}
                     disabled={deleting}
+                    aria-label="Remove from feed"
                     title="Remove from feed"
-                    className="shrink-0 rounded px-2 py-1.5 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded text-ink-3 hover:text-hot disabled:opacity-50"
                   >
                     {deleting ? "…" : "✕"}
                   </button>
@@ -221,7 +222,7 @@ export function ActivityFeedCard() {
                 load(entries.length, true);
               }}
               disabled={loadingMore}
-              className="mt-3 w-full rounded border border-ink-2 px-3 py-1.5 text-xs text-ink-3 hover:text-ink-4 disabled:opacity-50"
+              className="mt-3 min-h-11 w-full rounded border border-ink-2 px-3 text-xs text-ink-3 hover:text-ink-4 disabled:opacity-50"
             >
               {loadingMore ? "Loading…" : "Load more"}
             </button>
