@@ -31,6 +31,16 @@ type CustomerTopicsInsert = {
   created_at?: string;
   discussed_at?: string | null;
   due_date?: string | null;
+  commitment_owner?: "me" | "them" | null;
+}
+
+type GeneralNotesInsert = {
+  id?: string;
+  user_id: string;
+  text: string;
+  tags?: string[];
+  related_account_id?: string | null;
+  created_at?: string;
 }
 
 type RateCalculationsInsert = {
@@ -192,9 +202,23 @@ export interface Database {
           created_at: string;
           discussed_at: string | null;
           due_date: string | null;
+          commitment_owner: "me" | "them" | null;
         };
         Insert: CustomerTopicsInsert;
         Update: Partial<CustomerTopicsInsert>;
+        Relationships: [];
+      };
+      general_notes: {
+        Row: {
+          id: string;
+          user_id: string;
+          text: string;
+          tags: string[];
+          related_account_id: string | null;
+          created_at: string;
+        };
+        Insert: GeneralNotesInsert;
+        Update: Partial<GeneralNotesInsert>;
         Relationships: [];
       };
       rate_calculations: {

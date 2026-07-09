@@ -6,10 +6,13 @@ export type CaptureKind =
   | "load_note"
   | "account_note"
   | "finance_note"
-  | "rate_request";
+  | "rate_request"
+  | "general_note"
+  | "brief_request";
 export type CaptureUrgency = "today" | "this_week" | "this_month" | "someday";
 export type CaptureSeverity = "hot" | "warm" | "resolved";
 export type AccountKind = "plant" | "customer";
+export type CommitmentOwner = "me" | "them";
 
 export type RateOverrideKey =
   | "target_per_hour"
@@ -45,6 +48,9 @@ export interface CaptureClassification {
   one_way_miles: number | null;
   net_tonnage: number | null;
   overrides: Partial<Record<RateOverrideKey, number>> | null;
+  // Set whenever the capture reads as a customer-topic-shaped commitment,
+  // regardless of kind — routeCapture only persists it for customer_topics.
+  commitment_owner: CommitmentOwner | null;
 }
 
 const KIND_VALUES: CaptureKind[] = [
@@ -54,10 +60,13 @@ const KIND_VALUES: CaptureKind[] = [
   "account_note",
   "finance_note",
   "rate_request",
+  "general_note",
+  "brief_request",
 ];
 const URGENCY_VALUES: CaptureUrgency[] = ["today", "this_week", "this_month", "someday"];
 const SEVERITY_VALUES: CaptureSeverity[] = ["hot", "warm", "resolved"];
 const ACCOUNT_KIND_VALUES: AccountKind[] = ["plant", "customer"];
+const COMMITMENT_OWNER_VALUES: CommitmentOwner[] = ["me", "them"];
 
 const SYSTEM_PROMPT = `You classify short voice-note transcripts or typed notes from a
 logistics fleet coordinator into a structured capture for an ops database.
@@ -68,14 +77,22 @@ issue, driver complaint), task (something to follow up on), load_note
 a plant/account relationship), finance_note (a rate, FSC, or margin
 comment), rate_request (asking for or generating a rate/quote for a
 customer — phrases like "X wants a rate", "need a quote for X", "what
-do we charge X for", "RMR wants a rate from Ghent to Louisville").
+do we charge X for", "RMR wants a rate from Ghent to Louisville"),
+brief_request (asking to be briefed or caught up on an account before a
+call — phrases like "brief me on X", "catch me up on X before this
+call", "what's the status with X"), general_note (the fallback — use
+this when a capture doesn't clearly fit any of the other kinds and isn't
+a substantive customer-relationship discussion: personal reminders,
+ideas, industry trivia, things worth remembering that aren't a task, an
+issue, a rate request, a brief request, or a customer commitment).
 
 account_kind must be exactly one of: plant (a physical/operational
 location — spills, breakdowns, roll-off failures, equipment, gate
 delays, DOT issues) or customer (a business relationship — meetings,
 rate negotiations, scope discussions, follow-ups, or anything discussed
 with a named contact person rather than about a physical site).
-rate_request captures are always customer.
+rate_request captures are always customer. general_note and
+brief_request can be about either kind, or about no account at all.
 
 account_name_guess should be the company/plant/customer name this
 refers to (e.g. "RMR", "DKPI", "Midwest Recycling") — a company name
@@ -83,7 +100,9 @@ only, never a person's name. If a location could refer to more than one
 account (for example "Ghent" could mean either an NTP-G Shear account
 or a Nucor Ghent account, both located in Ghent, KY), prefer whichever
 company name is actually mentioned; if you cannot tell, leave
-account_name_guess empty rather than guessing.
+account_name_guess empty rather than guessing. Leave it empty entirely
+for a general_note that doesn't clearly reference any account — don't
+force a guess.
 
 contact_name_guess should be a person's first or full name mentioned in
 the capture, if any (e.g. "Clint", "Sarah") — separate from
@@ -105,6 +124,21 @@ include a key in overrides if a number was actually spoken for it —
 never guess or fill in defaults. Leave origin_city/destination_city/
 one_way_miles/net_tonnage/overrides empty for every non-rate_request
 capture.
+
+For general_note captures, tags may carry a short theme or two if one is
+obvious (e.g. "SpaceX", "shop plan", "personal") but a blank tags array
+is completely fine — don't strain to invent a tag.
+
+commitment_owner applies to captures about a customer relationship (the
+kind of thing that would become a customer topic): set it to "me" when
+the coordinator is committing to do something — first-person commitment
+language like "I'll follow up", "I owe them", "let me get back to
+them", "need to send them the sheet". Set it to "them" when the
+coordinator is waiting on the other side — "they're getting back to
+me", "waiting to hear from them", "they said they'd send it over".
+Leave it empty for ambiguous or general discussion, and always leave it
+empty for anything that isn't about a customer relationship (plant
+issues, tasks, rate requests, general notes).
 
 urgency and severity should both be your best judgment even if the
 capture's kind doesn't use one of them.`;
@@ -150,6 +184,11 @@ const CLASSIFY_TOOL: Anthropic.Tool = {
         description: "rate_request only: any explicit spoken numeric overrides for this quote.",
         properties: Object.fromEntries(RATE_OVERRIDE_KEYS.map((key) => [key, { type: "number" }])),
       },
+      commitment_owner: {
+        type: "string",
+        enum: COMMITMENT_OWNER_VALUES,
+        description: "Who owes the next move on a customer-relationship capture, if clear from the language.",
+      },
     },
     required: ["kind", "account_kind", "urgency", "severity", "tags", "summary"],
   },
@@ -189,7 +228,7 @@ function normalizeString(input: unknown): string | null {
 function normalize(input: Record<string, unknown>): CaptureClassification {
   const kind = KIND_VALUES.includes(input.kind as CaptureKind)
     ? (input.kind as CaptureKind)
-    : "task";
+    : "general_note";
   const accountKind = ACCOUNT_KIND_VALUES.includes(input.account_kind as AccountKind)
     ? (input.account_kind as AccountKind)
     : "plant";
@@ -201,6 +240,9 @@ function normalize(input: Record<string, unknown>): CaptureClassification {
     : "warm";
   const tags = Array.isArray(input.tags) ? input.tags.filter((tag) => typeof tag === "string") : [];
   const summary = typeof input.summary === "string" && input.summary.trim() ? input.summary.trim() : "(no summary)";
+  const commitmentOwner = COMMITMENT_OWNER_VALUES.includes(input.commitment_owner as CommitmentOwner)
+    ? (input.commitment_owner as CommitmentOwner)
+    : null;
 
   return {
     kind,
@@ -216,6 +258,7 @@ function normalize(input: Record<string, unknown>): CaptureClassification {
     one_way_miles: normalizeNumber(input.one_way_miles),
     net_tonnage: normalizeNumber(input.net_tonnage),
     overrides: normalizeOverrides(input.overrides),
+    commitment_owner: commitmentOwner,
   };
 }
 

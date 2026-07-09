@@ -6,6 +6,7 @@ import { getAccountById } from "@/lib/router/matchAccount";
 import { resolveAccountAndContacts, mergeDraftAccount } from "@/lib/router/resolveAccount";
 import { routeCapture, type RouteResult } from "@/lib/router/routeCapture";
 import { handleRateRequest } from "@/lib/router/handleRateRequest";
+import { handleBriefRequest } from "@/lib/router/handleBriefRequest";
 import { transcribeVoice } from "@/lib/transcription/transcribeVoice";
 import { downloadVoice, sendMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
 import {
@@ -141,11 +142,21 @@ async function handleMessage(message: TelegramMessage) {
 
   let route: RouteResult;
   let rateReplyText: string | null = null;
+  let briefReplyText: string | null = null;
 
   if (classification.kind === "rate_request" && account && account.kind === "customer") {
     const rateResult = await handleRateRequest(classification, account, userId);
     route = { routedTo: rateResult.routedTo, routedId: rateResult.routedId };
     rateReplyText = rateResult.replyText;
+  } else if (classification.kind === "brief_request") {
+    if (account) {
+      const briefResult = await handleBriefRequest(account, userId, capture.id);
+      route = { routedTo: "brief_request", routedId: account.id };
+      briefReplyText = briefResult.replyText;
+    } else {
+      route = { routedTo: null, routedId: null };
+      briefReplyText = "Which account did you mean? Try again with the company name.";
+    }
   } else {
     route = await routeCapture(classification, account, text, userId);
   }
@@ -155,6 +166,19 @@ async function handleMessage(message: TelegramMessage) {
       .from("raw_captures")
       .update({ routed_to: route.routedTo, routed_id: route.routedId })
       .eq("id", capture.id);
+  }
+
+  // Both kinds bypass the account-correction keyboard entirely: general_note
+  // has no account to get wrong (per Part 1c), and brief_request is a
+  // read-only lookup with nothing left to correct once answered.
+  if (classification.kind === "general_note") {
+    await sendMessage(chatId, "Noted.");
+    return;
+  }
+
+  if (classification.kind === "brief_request") {
+    await sendMessage(chatId, briefReplyText ?? "Couldn't generate that brief.");
+    return;
   }
 
   if (resolution.isDraft && account) {

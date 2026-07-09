@@ -5,6 +5,8 @@ type AccountRow = Database["public"]["Tables"]["accounts"]["Row"];
 type CorrectiveActionRow = Database["public"]["Tables"]["corrective_actions"]["Row"];
 type LoadRow = Database["public"]["Tables"]["loads"]["Row"];
 type LaneFinancialRow = Database["public"]["Tables"]["lane_financials"]["Row"];
+type CustomerContactRow = Database["public"]["Tables"]["customer_contacts"]["Row"];
+type CustomerTopicRow = Database["public"]["Tables"]["customer_topics"]["Row"];
 
 export type KanbanColumn = "Active Issue" | "This Week" | "Monitoring" | "Stable";
 
@@ -77,8 +79,15 @@ export interface AccountDetail {
   loads: LoadRow[];
   correctiveActions: CorrectiveActionRow[];
   laneFinancials: LaneFinancialRow[];
+  contacts: CustomerContactRow[];
+  topics: CustomerTopicRow[];
 }
 
+// Kind-agnostic — works for both plant and customer accounts. Plant-only
+// fields (loads, laneFinancials) and customer-only fields (contacts,
+// topics) are simply empty arrays for the kind that doesn't apply, which
+// keeps this a single shared shape for the account summary generator and
+// brief_request (Part 2) rather than forking a parallel plant-only query.
 export async function getAccountDetail(userId: string, accountId: string): Promise<AccountDetail | null> {
   const supabase = getServiceRoleClient();
 
@@ -87,44 +96,59 @@ export async function getAccountDetail(userId: string, accountId: string): Promi
     .select("*")
     .eq("id", accountId)
     .eq("user_id", userId)
-    .eq("kind", "plant")
     .maybeSingle();
 
   if (accountError) throw accountError;
   if (!account) return null;
 
-  const [{ data: loads, error: loadsError }, { data: correctiveActions, error: caError }, { data: laneFinancials, error: lfError }] =
-    await Promise.all([
-      supabase
-        .from("loads")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("account_id", accountId)
-        .order("scheduled_date", { ascending: false })
-        .limit(20),
-      supabase
-        .from("corrective_actions")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("account_id", accountId)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("lane_financials")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("account_id", accountId)
-        .order("period", { ascending: false })
-        .limit(12),
-    ]);
+  const [
+    { data: loads, error: loadsError },
+    { data: correctiveActions, error: caError },
+    { data: laneFinancials, error: lfError },
+    { data: contacts, error: contactsError },
+    { data: topics, error: topicsError },
+  ] = await Promise.all([
+    supabase
+      .from("loads")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .order("scheduled_date", { ascending: false })
+      .limit(20),
+    supabase
+      .from("corrective_actions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("lane_financials")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .order("period", { ascending: false })
+      .limit(12),
+    supabase.from("customer_contacts").select("*").eq("account_id", accountId).order("name"),
+    supabase
+      .from("customer_topics")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .order("created_at", { ascending: false }),
+  ]);
 
   if (loadsError) throw loadsError;
   if (caError) throw caError;
   if (lfError) throw lfError;
+  if (contactsError) throw contactsError;
+  if (topicsError) throw topicsError;
 
   return {
     account,
     loads: loads ?? [],
     correctiveActions: correctiveActions ?? [],
     laneFinancials: laneFinancials ?? [],
+    contacts: contacts ?? [],
+    topics: topics ?? [],
   };
 }

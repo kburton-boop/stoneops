@@ -4,6 +4,7 @@ import { CorrectiveActionsCard } from "@/components/cards/CorrectiveActionsCard"
 import { SessionCard } from "@/components/cards/SessionCard";
 import { AccountsKanbanCard } from "@/components/cards/AccountsKanbanCard";
 import { FleetPulseCard } from "@/components/cards/FleetPulseCard";
+import { ActivityFeedCard } from "@/components/cards/ActivityFeedCard";
 import { getAccountsForKanban } from "@/lib/accounts/queries";
 import { getCorrectiveActions } from "@/lib/correctiveActions/queries";
 
@@ -34,6 +35,9 @@ export default async function Home() {
         <div className="space-y-4">
           <FleetPulseCard />
         </div>
+      </div>
+      <div className="mt-4">
+        <ActivityFeedCard />
       </div>
     </Shell>
   );

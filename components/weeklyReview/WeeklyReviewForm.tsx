@@ -100,6 +100,11 @@ export function WeeklyReviewForm({
       action={<span className="text-xs text-ink-3">{STATUS_LABEL[status]}</span>}
     >
       <div className="space-y-4">
+        {(fields.wins || fields.what_slipped) && (
+          <p className="rounded border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-ink-3">
+            Drafted from this week&apos;s activity — edit as needed.
+          </p>
+        )}
         <Field
           label="Wins This Week"
           value={fields.wins}

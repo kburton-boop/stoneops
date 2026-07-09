@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   const supabase = getServiceRoleClient();
   const { data: topics, error } = await supabase
     .from("customer_topics")
-    .select("id, title, due_date, accounts(name)")
+    .select("id, title, due_date, commitment_owner, accounts(name)")
     .eq("user_id", userId)
     .eq("status", "open")
     .not("due_date", "is", null)
@@ -38,6 +38,7 @@ export async function GET(request: Request) {
     id: string;
     title: string;
     due_date: string;
+    commitment_owner: "me" | "them" | null;
     accounts: { name: string } | null;
   }[];
 
@@ -45,14 +46,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, sent: false });
   }
 
-  const lines = dueTopics
+  const formatted = dueTopics
     .map((topic) => ({
       accountName: topic.accounts?.name ?? "Unassigned",
       title: topic.title,
       label: formatDueLabel(daysBetween(topic.due_date, today)),
+      commitmentOwner: topic.commitment_owner,
     }))
-    .sort((a, b) => a.accountName.localeCompare(b.accountName))
-    .map((t) => `${t.accountName} — ${t.title} (${t.label})`);
+    .sort((a, b) => a.accountName.localeCompare(b.accountName));
+
+  // "me" commitments reflect directly on the coordinator if missed, so they
+  // lead the message rather than being sorted in alongside everything else.
+  const mine = formatted.filter((t) => t.commitmentOwner === "me");
+  const rest = formatted.filter((t) => t.commitmentOwner !== "me");
+
+  const lines = [
+    ...mine.map((t) => `[YOU OWE] ${t.accountName} — ${t.title} (${t.label})`),
+    ...rest.map((t) => `${t.accountName} — ${t.title} (${t.label})`),
+  ];
 
   const text = ["Follow-ups due:", ...lines].join("\n");
 

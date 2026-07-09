@@ -1,6 +1,7 @@
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
 import { getTodayInTimezone } from "@/lib/dates";
+import { generateWeeklyDraft } from "./draft";
 
 export type WeeklyReviewRow = Database["public"]["Tables"]["weekly_reviews"]["Row"];
 
@@ -19,6 +20,27 @@ function addDays(isoDate: string, days: number): string {
   const date = new Date(`${isoDate}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+// Only ever called right after inserting a brand new (unsealed) row, so the
+// draft is generated exactly once per week — never regenerated on a later
+// page load, which would clobber in-progress manual edits.
+async function attachDraft(userId: string, review: WeeklyReviewRow): Promise<WeeklyReviewRow> {
+  try {
+    const draft = await generateWeeklyDraft(userId, review);
+    const supabase = getServiceRoleClient();
+    const { data: updated, error } = await supabase
+      .from("weekly_reviews")
+      .update(draft)
+      .eq("id", review.id)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return updated;
+  } catch (error) {
+    console.error("Weekly review draft generation failed", error);
+    return review;
+  }
 }
 
 export async function getOrCreateCurrentReview(userId: string): Promise<WeeklyReviewRow> {
@@ -46,7 +68,7 @@ export async function getOrCreateCurrentReview(userId: string): Promise<WeeklyRe
     .single();
 
   if (insertError) throw insertError;
-  return created;
+  return attachDraft(userId, created);
 }
 
 export async function listSealedReviews(userId: string): Promise<WeeklyReviewRow[]> {
@@ -88,5 +110,5 @@ export async function sealReviewAndCreateNext(
 
   if (insertError) throw insertError;
 
-  return { sealed, next };
+  return { sealed, next: await attachDraft(userId, next) };
 }

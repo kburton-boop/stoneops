@@ -3,7 +3,14 @@ import type { CaptureClassification, AccountKind } from "./classifyCapture";
 import type { AccountMatch } from "./matchAccount";
 
 export interface RouteResult {
-  routedTo: "corrective_actions" | "tasks" | "customer_topics" | "rate_calculations" | null;
+  routedTo:
+    | "corrective_actions"
+    | "tasks"
+    | "customer_topics"
+    | "rate_calculations"
+    | "general_notes"
+    | "brief_request"
+    | null;
   routedId: string | null;
 }
 
@@ -18,6 +25,25 @@ export async function routeCapture(
   userId: string,
 ): Promise<RouteResult> {
   const supabase = getServiceRoleClient();
+
+  // general_note is a strict fallback that bypasses both the corrective-
+  // action/task table and the customer_topics catch-all below — it's the
+  // one kind that should never be forced into a category it doesn't fit,
+  // regardless of which account (if any) it happens to mention.
+  if (classification.kind === "general_note") {
+    const { data, error } = await supabase
+      .from("general_notes")
+      .insert({
+        user_id: userId,
+        text: rawText,
+        tags: classification.tags,
+        related_account_id: account?.id ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return { routedTo: "general_notes", routedId: data.id };
+  }
 
   // The matched account's real kind (from the database) is more reliable
   // than the classifier's guess, since the classifier hasn't seen which
@@ -35,6 +61,7 @@ export async function routeCapture(
         description: rawText,
         status: "open",
         related_to: deriveRelatedTo(classification),
+        commitment_owner: classification.commitment_owner,
       })
       .select("id")
       .single();

@@ -20,8 +20,14 @@ interface CustomerAccountDetail {
     created_at: string;
     discussed_at: string | null;
     due_date: string | null;
+    commitment_owner: "me" | "them" | null;
   }[];
 }
+
+const COMMITMENT_BADGE: Record<"me" | "them", string> = {
+  me: "You",
+  them: "Them",
+};
 
 export function CustomerAccountDetailDrawer({
   accountId,
@@ -150,16 +156,27 @@ export function CustomerAccountDetailDrawer({
                           <p className="text-sm text-ink-4">{topic.title}</p>
                           {topic.related_to && <p className="text-xs text-ink-3">{topic.related_to}</p>}
                         </div>
-                        <button
-                          type="button"
-                          disabled={savingTopicId === topic.id}
-                          onClick={() => toggleTopicStatus(topic.id, topic.status === "open" ? "discussed" : "open")}
-                          className={`shrink-0 rounded px-2 py-0.5 font-mono text-xs uppercase disabled:opacity-50 ${
-                            topic.status === "open" ? "bg-warm/20 text-warm" : "bg-stable/20 text-stable"
-                          }`}
-                        >
-                          {topic.status}
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {topic.commitment_owner && (
+                            <span
+                              className={`rounded px-1.5 py-0.5 font-mono text-xs uppercase ${
+                                topic.commitment_owner === "me" ? "bg-hot/20 text-hot" : "bg-ink-2 text-ink-3"
+                              }`}
+                            >
+                              {COMMITMENT_BADGE[topic.commitment_owner]}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            disabled={savingTopicId === topic.id}
+                            onClick={() => toggleTopicStatus(topic.id, topic.status === "open" ? "discussed" : "open")}
+                            className={`rounded px-2 py-0.5 font-mono text-xs uppercase disabled:opacity-50 ${
+                              topic.status === "open" ? "bg-warm/20 text-warm" : "bg-stable/20 text-stable"
+                            }`}
+                          >
+                            {topic.status}
+                          </button>
+                        </div>
                       </div>
                       {topic.status === "open" ? (
                         <label className="mt-2 flex items-center gap-2 text-xs text-ink-3">
