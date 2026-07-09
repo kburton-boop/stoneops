@@ -18,6 +18,7 @@ interface CustomerAccountDetail {
     related_to: string | null;
     created_at: string;
     discussed_at: string | null;
+    due_date: string | null;
   }[];
 }
 
@@ -56,13 +57,13 @@ export function CustomerAccountDetailDrawer({
     };
   }, [accountId]);
 
-  async function toggleTopicStatus(topicId: string, nextStatus: "open" | "discussed") {
+  async function patchTopic(topicId: string, body: Record<string, unknown>) {
     setSavingTopicId(topicId);
     try {
       const res = await fetch(`/api/customer-topics/${topicId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("Update failed");
       const updated = await res.json();
@@ -76,6 +77,14 @@ export function CustomerAccountDetailDrawer({
     } finally {
       setSavingTopicId(null);
     }
+  }
+
+  function toggleTopicStatus(topicId: string, nextStatus: "open" | "discussed") {
+    return patchTopic(topicId, { status: nextStatus });
+  }
+
+  function updateDueDate(topicId: string, dueDate: string) {
+    return patchTopic(topicId, { due_date: dueDate || null });
   }
 
   return (
@@ -131,6 +140,20 @@ export function CustomerAccountDetailDrawer({
                       {topic.status}
                     </button>
                   </div>
+                  {topic.status === "open" ? (
+                    <label className="mt-2 flex items-center gap-2 text-xs text-ink-3">
+                      Due
+                      <input
+                        type="date"
+                        value={topic.due_date ?? ""}
+                        disabled={savingTopicId === topic.id}
+                        onChange={(e) => updateDueDate(topic.id, e.target.value)}
+                        className="rounded border border-ink-2 bg-ink-0 px-2 py-1 text-xs text-ink-4 outline-none focus:border-accent disabled:opacity-50"
+                      />
+                    </label>
+                  ) : (
+                    topic.due_date && <p className="mt-2 text-xs text-ink-3">Was due {topic.due_date}</p>
+                  )}
                 </li>
               ))}
             </ul>

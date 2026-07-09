@@ -8,6 +8,7 @@ const SELF_AUTHENTICATING_API_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/logout",
   "/api/telegram/webhook",
+  "/api/cron/topic-reminders",
 ]);
 
 export default function proxy(request: NextRequest) {

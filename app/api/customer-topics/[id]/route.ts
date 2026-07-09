@@ -5,6 +5,7 @@ import type { Database } from "@/lib/supabase/types";
 type CustomerTopicUpdate = Database["public"]["Tables"]["customer_topics"]["Update"];
 
 const STATUS_VALUES = ["open", "discussed"] as const;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function getUserId() {
   return process.env.USER_ID || "kody";
@@ -48,6 +49,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/customer-t
       return NextResponse.json({ error: "Invalid related_to" }, { status: 400 });
     }
     update.related_to = input.related_to;
+  }
+
+  if (input.due_date !== undefined) {
+    if (input.due_date !== null && (typeof input.due_date !== "string" || !DATE_PATTERN.test(input.due_date))) {
+      return NextResponse.json({ error: "Invalid due_date" }, { status: 400 });
+    }
+    update.due_date = input.due_date;
   }
 
   if (Object.keys(update).length === 0) {

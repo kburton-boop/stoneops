@@ -30,6 +30,17 @@ type CustomerTopicsInsert = {
   related_to?: string | null;
   created_at?: string;
   discussed_at?: string | null;
+  due_date?: string | null;
+}
+
+type RateCalculationsInsert = {
+  id?: string;
+  user_id: string;
+  account_id?: string | null;
+  formula_type: "percentage_fsc" | "per_mile_fsc";
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  created_at?: string;
 }
 
 type LoadsInsert = {
@@ -166,9 +177,24 @@ export interface Database {
           related_to: string | null;
           created_at: string;
           discussed_at: string | null;
+          due_date: string | null;
         };
         Insert: CustomerTopicsInsert;
         Update: Partial<CustomerTopicsInsert>;
+        Relationships: [];
+      };
+      rate_calculations: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string | null;
+          formula_type: "percentage_fsc" | "per_mile_fsc";
+          inputs: Record<string, unknown>;
+          outputs: Record<string, unknown>;
+          created_at: string;
+        };
+        Insert: RateCalculationsInsert;
+        Update: Partial<RateCalculationsInsert>;
         Relationships: [];
       };
       loads: {

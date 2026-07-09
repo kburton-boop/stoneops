@@ -1,19 +1,12 @@
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
+import { getTodayInTimezone } from "@/lib/dates";
 
 export type WeeklyReviewRow = Database["public"]["Tables"]["weekly_reviews"]["Row"];
 
 export function getWeekStart(date: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-
-  const year = Number(parts.find((p) => p.type === "year")?.value);
-  const month = Number(parts.find((p) => p.type === "month")?.value);
-  const day = Number(parts.find((p) => p.type === "day")?.value);
+  const today = getTodayInTimezone(timeZone, date);
+  const [year, month, day] = today.split("-").map(Number);
 
   const asUtc = new Date(Date.UTC(year, month - 1, day));
   const daysSinceMonday = (asUtc.getUTCDay() + 6) % 7;
