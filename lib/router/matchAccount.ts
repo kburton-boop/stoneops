@@ -6,7 +6,7 @@ export interface AccountMatch {
   kind: "plant" | "customer";
 }
 
-function normalize(value: string) {
+export function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -14,11 +14,19 @@ function toMatch(account: { id: string; name: string; kind: "plant" | "customer"
   return { id: account.id, name: account.name, kind: account.kind };
 }
 
-export async function matchAccount(
+export interface AccountMatchResult {
+  match: AccountMatch | null;
+  // True when the name guess overlapped more than one distinct account and
+  // we deliberately declined to pick one — distinct from "no overlap at
+  // all", which callers may treat as "safe to treat as a brand new name".
+  ambiguous: boolean;
+}
+
+export async function matchAccountDetailed(
   nameGuess: string | null,
   userId: string,
-): Promise<AccountMatch | null> {
-  if (!nameGuess || !nameGuess.trim()) return null;
+): Promise<AccountMatchResult> {
+  if (!nameGuess || !nameGuess.trim()) return { match: null, ambiguous: false };
 
   const supabase = getServiceRoleClient();
   const { data: accounts, error: accountsError } = await supabase
@@ -27,7 +35,7 @@ export async function matchAccount(
     .eq("user_id", userId);
 
   if (accountsError) throw accountsError;
-  if (!accounts || accounts.length === 0) return null;
+  if (!accounts || accounts.length === 0) return { match: null, ambiguous: false };
 
   const accountIds = accounts.map((account) => account.id);
   const { data: contacts, error: contactsError } = await supabase
@@ -41,21 +49,21 @@ export async function matchAccount(
 
   // 1. Exact match on account/customer name.
   const exact = accounts.filter((account) => normalize(account.name) === needle);
-  if (exact.length === 1) return toMatch(exact[0]);
+  if (exact.length === 1) return { match: toMatch(exact[0]), ambiguous: false };
 
   // 2. Exact match on a customer contact's name (e.g. "Clint" -> RMR).
   const exactContact = (contacts ?? []).filter((contact) => normalize(contact.name) === needle);
   if (exactContact.length === 1) {
     const account = accounts.find((a) => a.id === exactContact[0].account_id);
-    if (account) return toMatch(account);
+    if (account) return { match: toMatch(account), ambiguous: false };
   }
 
   // 3. Partial match on account/customer name.
   const byName = accounts.filter(
     (account) => normalize(account.name).includes(needle) || needle.includes(normalize(account.name)),
   );
-  if (byName.length === 1) return toMatch(byName[0]);
-  if (byName.length > 1) return null;
+  if (byName.length === 1) return { match: toMatch(byName[0]), ambiguous: false };
+  if (byName.length > 1) return { match: null, ambiguous: true };
 
   // 4. Partial match on a contact's name.
   const byContact = (contacts ?? []).filter(
@@ -64,19 +72,27 @@ export async function matchAccount(
   const byContactAccountIds = new Set(byContact.map((contact) => contact.account_id));
   if (byContactAccountIds.size === 1) {
     const account = accounts.find((a) => a.id === [...byContactAccountIds][0]);
-    if (account) return toMatch(account);
+    if (account) return { match: toMatch(account), ambiguous: false };
   }
-  if (byContactAccountIds.size > 1) return null;
+  if (byContactAccountIds.size > 1) return { match: null, ambiguous: true };
 
   // 5. Plant location (plants only — customers don't have one).
   const byLocation = accounts.filter(
     (account) => account.plant_location && normalize(account.plant_location).includes(needle),
   );
-  if (byLocation.length === 1) return toMatch(byLocation[0]);
+  if (byLocation.length === 1) return { match: toMatch(byLocation[0]), ambiguous: false };
+  if (byLocation.length > 1) return { match: null, ambiguous: true };
 
-  // No match, or genuinely ambiguous (e.g. "Ghent" matching two plants in
-  // the same town) — flag for manual review rather than guessing.
-  return null;
+  // No match at all — flag for manual review rather than guessing.
+  return { match: null, ambiguous: false };
+}
+
+export async function matchAccount(
+  nameGuess: string | null,
+  userId: string,
+): Promise<AccountMatch | null> {
+  const { match } = await matchAccountDetailed(nameGuess, userId);
+  return match;
 }
 
 export async function getAccountById(id: string, userId: string): Promise<AccountMatch | null> {

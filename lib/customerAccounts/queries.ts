@@ -8,6 +8,7 @@ type CustomerTopicRow = Database["public"]["Tables"]["customer_topics"]["Row"];
 export interface CustomerAccountSummary {
   id: string;
   name: string;
+  status: AccountRow["status"];
   contacts: { id: string; name: string; role: string | null }[];
   openTopicCount: number;
   preview: string | null;
@@ -18,7 +19,7 @@ export async function getCustomerAccountsOverview(userId: string): Promise<Custo
 
   const { data: accounts, error: accountsError } = await supabase
     .from("accounts")
-    .select("id, name")
+    .select("id, name, status")
     .eq("user_id", userId)
     .eq("kind", "customer")
     .order("name");
@@ -64,6 +65,7 @@ export async function getCustomerAccountsOverview(userId: string): Promise<Custo
     return {
       id: account.id,
       name: account.name,
+      status: account.status,
       contacts: (contactsByAccount.get(account.id) ?? []).map(({ id, name, role }) => ({ id, name, role })),
       openTopicCount,
       preview: mostRecent?.title ?? null,

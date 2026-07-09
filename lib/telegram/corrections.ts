@@ -72,6 +72,15 @@ export function buildCorrectionKeyboard(
   return { inline_keyboard: rows };
 }
 
+export function buildDraftConfirmationKeyboard(captureId: string): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: "Confirm", callback_data: `cc:${captureId}` }],
+      [{ text: "Not a new customer — let me pick", callback_data: `rc:${captureId}` }],
+    ],
+  };
+}
+
 export function buildConfirmationText(
   classification: CaptureClassification,
   accountName: string | null,
@@ -90,6 +99,9 @@ export function buildConfirmationText(
   }
   if (route.routedTo === "customer_topics") {
     lines.push("Filed as a customer topic");
+  }
+  if (route.routedTo === "rate_calculations") {
+    lines.push("Filed as a rate calculation");
   }
   if (classification.tags.length > 0) {
     lines.push(`Tags: ${classification.tags.join(", ")}`);

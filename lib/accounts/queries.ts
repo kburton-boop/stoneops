@@ -13,6 +13,7 @@ const STATUS_TO_COLUMN: Record<AccountRow["status"], KanbanColumn> = {
   warm: "This Week",
   cool: "Monitoring",
   stable: "Stable",
+  pending_confirmation: "Stable",
 };
 
 export interface AccountSummaryCard {

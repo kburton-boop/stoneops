@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { calculateTypeA, calculateTypeB } from "@/lib/rateCalculator/calculate";
+import type { Database } from "@/lib/supabase/types";
+
+type RateDefaultsRow = Database["public"]["Tables"]["rate_defaults"]["Row"];
 
 type FormulaType = "percentage_fsc" | "per_mile_fsc";
 
@@ -67,15 +70,6 @@ function toNumbers(values: Record<FieldKey, string>): Record<FieldKey, number | 
   return result;
 }
 
-function stringifyInputs(inputs: Record<string, unknown>): Partial<Record<FieldKey, string>> {
-  const result: Partial<Record<FieldKey, string>> = {};
-  for (const key of ALL_FIELD_KEYS) {
-    const value = inputs[key];
-    if (typeof value === "number") result[key] = String(value);
-  }
-  return result;
-}
-
 function formatOutput(key: string, value: number): string {
   if (CURRENCY_KEYS.has(key)) return `$${value.toFixed(2)}`;
   if (key === "time_hours") return value.toFixed(4);
@@ -92,20 +86,29 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [defaultsError, setDefaultsError] = useState<string | null>(null);
+  const [defaultsSaved, setDefaultsSaved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/rate-calculations?account_id=${accountId}`)
+    fetch(`/api/rate-defaults?account_id=${accountId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { calculation: { formula_type: FormulaType; inputs: Record<string, unknown> } | null } | null) => {
-        if (cancelled || !data?.calculation) return;
-        setFormulaType(data.calculation.formula_type);
-        setValues((prev) => ({ ...prev, ...stringifyInputs(data.calculation!.inputs) }));
-        if (typeof data.calculation.inputs.origin === "string") setOrigin(data.calculation.inputs.origin);
-        if (typeof data.calculation.inputs.destination === "string") {
-          setDestination(data.calculation.inputs.destination);
-        }
+      .then((data: { defaults: RateDefaultsRow | null } | null) => {
+        if (cancelled || !data?.defaults) return;
+        const defaults = data.defaults;
+        setFormulaType(defaults.formula_type);
+        setValues((prev) => ({
+          ...prev,
+          target_per_hour: String(defaults.target_per_hour),
+          time_add_hours: String(defaults.time_add_hours),
+          avg_speed_mph: String(defaults.avg_speed_mph),
+          mpg: String(defaults.mpg),
+          ppg: String(defaults.ppg),
+          fsc_percent: defaults.fsc_percent != null ? String(defaults.fsc_percent) : prev.fsc_percent,
+          baseline_price: defaults.baseline_price != null ? String(defaults.baseline_price) : prev.baseline_price,
+        }));
       })
       .catch(() => {});
 
@@ -117,6 +120,7 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
   function setField(key: FieldKey, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
     setSaved(false);
+    setDefaultsSaved(false);
   }
 
   async function handleLookupDistance() {
@@ -193,6 +197,45 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
       setSaveError("Couldn't save this calculation.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  const defaultsRequiredKeys: FieldKey[] = [
+    "target_per_hour",
+    "time_add_hours",
+    "avg_speed_mph",
+    "mpg",
+    "ppg",
+    formulaType === "percentage_fsc" ? "fsc_percent" : "baseline_price",
+  ];
+  const canSaveDefaults = defaultsRequiredKeys.every((key) => numeric[key] !== null);
+
+  async function handleSaveDefaults() {
+    if (!canSaveDefaults) return;
+    setSavingDefaults(true);
+    setDefaultsError(null);
+    try {
+      const res = await fetch("/api/rate-defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: accountId,
+          formula_type: formulaType,
+          target_per_hour: numeric.target_per_hour,
+          time_add_hours: numeric.time_add_hours,
+          avg_speed_mph: numeric.avg_speed_mph,
+          mpg: numeric.mpg,
+          ppg: numeric.ppg,
+          fsc_percent: formulaType === "percentage_fsc" ? numeric.fsc_percent : null,
+          baseline_price: formulaType === "per_mile_fsc" ? numeric.baseline_price : null,
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setDefaultsSaved(true);
+    } catch {
+      setDefaultsError("Couldn't save defaults.");
+    } finally {
+      setSavingDefaults(false);
     }
   }
 
@@ -305,6 +348,16 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
         className="w-full rounded bg-accent px-3 py-2 text-sm font-medium text-ink-0 disabled:opacity-50"
       >
         {saving ? "Saving…" : saved ? "Saved ✓" : "Save calculation"}
+      </button>
+
+      {defaultsError && <p className="text-sm text-hot">{defaultsError}</p>}
+      <button
+        type="button"
+        onClick={handleSaveDefaults}
+        disabled={!canSaveDefaults || savingDefaults}
+        className="w-full rounded border border-ink-2 px-3 py-2 text-sm font-medium text-ink-4 disabled:opacity-50"
+      >
+        {savingDefaults ? "Saving…" : defaultsSaved ? "Defaults saved ✓" : "Save as defaults for this account"}
       </button>
     </div>
   );

@@ -2,16 +2,28 @@ import { NextResponse } from "next/server";
 import { safeCompare } from "@/lib/auth/session";
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import { classifyCapture, type CaptureClassification } from "@/lib/router/classifyCapture";
-import { matchAccount, getAccountById } from "@/lib/router/matchAccount";
-import { routeCapture } from "@/lib/router/routeCapture";
+import { getAccountById } from "@/lib/router/matchAccount";
+import { resolveAccountAndContacts, mergeDraftAccount } from "@/lib/router/resolveAccount";
+import { routeCapture, type RouteResult } from "@/lib/router/routeCapture";
+import { handleRateRequest } from "@/lib/router/handleRateRequest";
 import { transcribeVoice } from "@/lib/transcription/transcribeVoice";
 import { downloadVoice, sendMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
-import { buildConfirmationText, buildCorrectionKeyboard, resolveAccountCode } from "@/lib/telegram/corrections";
+import {
+  buildConfirmationText,
+  buildCorrectionKeyboard,
+  buildDraftConfirmationKeyboard,
+  resolveAccountCode,
+} from "@/lib/telegram/corrections";
 import type { TelegramCallbackQuery, TelegramMessage, TelegramUpdate } from "@/lib/telegram/types";
 
 function getUserId() {
   return process.env.USER_ID || "kody";
 }
+
+type StoredClassification = CaptureClassification & {
+  matched_account_id?: string | null;
+  is_draft_account?: boolean;
+};
 
 const SEVERITY_VALUES: CaptureClassification["severity"][] = ["hot", "warm", "resolved"];
 const URGENCY_VALUES: CaptureClassification["urgency"][] = ["today", "this_week", "this_month", "someday"];
@@ -20,8 +32,15 @@ function isOneOf<T extends string>(value: string, options: readonly T[]): value 
   return (options as readonly string[]).includes(value);
 }
 
-function isRoutedTable(value: string | null): value is "corrective_actions" | "tasks" | "customer_topics" {
-  return value === "corrective_actions" || value === "tasks" || value === "customer_topics";
+function isRoutedTable(
+  value: string | null,
+): value is "corrective_actions" | "tasks" | "customer_topics" | "rate_calculations" {
+  return (
+    value === "corrective_actions" ||
+    value === "tasks" ||
+    value === "customer_topics" ||
+    value === "rate_calculations"
+  );
 }
 
 export async function POST(request: Request) {
@@ -93,7 +112,8 @@ async function handleMessage(message: TelegramMessage) {
     return;
   }
 
-  const account = await matchAccount(classification.account_name_guess, userId);
+  const resolution = await resolveAccountAndContacts(classification, userId);
+  const account = resolution.account;
 
   const { data: capture, error: insertError } = await supabase
     .from("raw_captures")
@@ -102,7 +122,11 @@ async function handleMessage(message: TelegramMessage) {
       source: "telegram",
       raw_text: text,
       audio_url: audioUrl,
-      classification: { ...classification, matched_account_id: account?.id ?? null },
+      classification: {
+        ...classification,
+        matched_account_id: account?.id ?? null,
+        is_draft_account: resolution.isDraft,
+      },
       routed_to: null,
       routed_id: null,
     })
@@ -115,7 +139,16 @@ async function handleMessage(message: TelegramMessage) {
     return;
   }
 
-  const route = await routeCapture(classification, account, text, userId);
+  let route: RouteResult;
+  let rateReplyText: string | null = null;
+
+  if (classification.kind === "rate_request" && account && account.kind === "customer") {
+    const rateResult = await handleRateRequest(classification, account, userId);
+    route = { routedTo: rateResult.routedTo, routedId: rateResult.routedId };
+    rateReplyText = rateResult.replyText;
+  } else {
+    route = await routeCapture(classification, account, text, userId);
+  }
 
   if (route.routedTo) {
     await supabase
@@ -124,7 +157,19 @@ async function handleMessage(message: TelegramMessage) {
       .eq("id", capture.id);
   }
 
-  const confirmationText = buildConfirmationText(classification, account?.name ?? null, route);
+  if (resolution.isDraft && account) {
+    const promptLine = `New customer?\n${account.name}${
+      resolution.draftContactName ? ` with contact ${resolution.draftContactName}` : ""
+    }`;
+    const detailText = rateReplyText ?? buildConfirmationText(classification, account.name, route);
+    await sendMessage(chatId, `${promptLine}\n\n${detailText}`, buildDraftConfirmationKeyboard(capture.id));
+    return;
+  }
+
+  let confirmationText = rateReplyText ?? buildConfirmationText(classification, account?.name ?? null, route);
+  if (resolution.contactNote) {
+    confirmationText = `${confirmationText}\n${resolution.contactNote}`;
+  }
   const keyboard = buildCorrectionKeyboard(capture.id, classification, route.routedTo);
   await sendMessage(chatId, confirmationText, keyboard);
 }
@@ -155,12 +200,58 @@ async function handleCallbackQuery(callback: TelegramCallbackQuery) {
     return;
   }
 
-  const classification = {
-    ...(capture.classification as unknown as CaptureClassification & { matched_account_id?: string | null }),
+  const classification: StoredClassification = {
+    ...(capture.classification as unknown as StoredClassification),
   };
+
+  if (action === "cc") {
+    const draftId = classification.matched_account_id ?? null;
+    if (!draftId || !classification.is_draft_account) {
+      await answerCallbackQuery(callback.id, "Nothing to confirm.");
+      return;
+    }
+
+    await supabase.from("accounts").update({ status: "stable" }).eq("id", draftId).eq("user_id", userId);
+    classification.is_draft_account = false;
+    await supabase
+      .from("raw_captures")
+      .update({ classification: classification as unknown as Record<string, unknown> })
+      .eq("id", capture.id);
+
+    const account = await getAccountById(draftId, userId);
+    await editMessageText(
+      callback.message.chat.id,
+      callback.message.message_id,
+      `${account?.name ?? "Account"} confirmed as a new customer.`,
+      { inline_keyboard: [] },
+    );
+    await answerCallbackQuery(callback.id, "Confirmed.");
+    return;
+  }
+
+  if (action === "rc") {
+    if (!classification.is_draft_account) {
+      await answerCallbackQuery(callback.id, "Nothing to reject.");
+      return;
+    }
+
+    const routedTo = isRoutedTable(capture.routed_to) ? capture.routed_to : null;
+    const keyboard = buildCorrectionKeyboard(capture.id, classification, routedTo);
+    await editMessageText(
+      callback.message.chat.id,
+      callback.message.message_id,
+      "Not a new customer — pick the real account:",
+      keyboard,
+    );
+    await answerCallbackQuery(callback.id, "Pick the real account.");
+    return;
+  }
+
   let confirmationSuffix = "";
 
   if (action === "a" || action === "n") {
+    const previousAccountId = classification.matched_account_id ?? null;
+    const wasDraft = classification.is_draft_account === true;
     const accountId = action === "n" ? null : await resolveAccountCode(value, userId);
     classification.matched_account_id = accountId;
 
@@ -170,7 +261,15 @@ async function handleCallbackQuery(callback: TelegramCallbackQuery) {
       await supabase.from("tasks").update({ account_id: accountId }).eq("id", capture.routed_id);
     } else if (capture.routed_to === "customer_topics" && capture.routed_id) {
       await supabase.from("customer_topics").update({ account_id: accountId }).eq("id", capture.routed_id);
+    } else if (capture.routed_to === "rate_calculations" && capture.routed_id) {
+      await supabase.from("rate_calculations").update({ account_id: accountId }).eq("id", capture.routed_id);
     }
+
+    if (action === "a" && wasDraft && previousAccountId && accountId && accountId !== previousAccountId) {
+      await mergeDraftAccount(previousAccountId, accountId, userId);
+      classification.is_draft_account = false;
+    }
+
     confirmationSuffix = action === "n" ? "Cleared account." : "Account updated.";
   } else if (
     action === "s" &&
@@ -195,7 +294,10 @@ async function handleCallbackQuery(callback: TelegramCallbackQuery) {
     return;
   }
 
-  await supabase.from("raw_captures").update({ classification }).eq("id", capture.id);
+  await supabase
+    .from("raw_captures")
+    .update({ classification: classification as unknown as Record<string, unknown> })
+    .eq("id", capture.id);
 
   const account = classification.matched_account_id
     ? await getAccountById(classification.matched_account_id, userId)

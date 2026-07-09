@@ -6,7 +6,7 @@ type AccountsInsert = {
   plant_location?: string | null;
   contact_name?: string | null;
   contact_role?: string | null;
-  status?: "hot" | "warm" | "cool" | "stable";
+  status?: "hot" | "warm" | "cool" | "stable" | "pending_confirmation";
   notes?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
@@ -41,6 +41,20 @@ type RateCalculationsInsert = {
   inputs: Record<string, unknown>;
   outputs: Record<string, unknown>;
   created_at?: string;
+}
+
+type RateDefaultsInsert = {
+  id?: string;
+  account_id: string;
+  formula_type: "percentage_fsc" | "per_mile_fsc";
+  target_per_hour: number;
+  time_add_hours: number;
+  avg_speed_mph: number;
+  mpg: number;
+  ppg: number;
+  fsc_percent?: number | null;
+  baseline_price?: number | null;
+  updated_at?: string;
 }
 
 type LoadsInsert = {
@@ -145,7 +159,7 @@ export interface Database {
           plant_location: string | null;
           contact_name: string | null;
           contact_role: string | null;
-          status: "hot" | "warm" | "cool" | "stable";
+          status: "hot" | "warm" | "cool" | "stable" | "pending_confirmation";
           notes: string | null;
           metadata: Record<string, unknown>;
           created_at: string;
@@ -195,6 +209,24 @@ export interface Database {
         };
         Insert: RateCalculationsInsert;
         Update: Partial<RateCalculationsInsert>;
+        Relationships: [];
+      };
+      rate_defaults: {
+        Row: {
+          id: string;
+          account_id: string;
+          formula_type: "percentage_fsc" | "per_mile_fsc";
+          target_per_hour: number;
+          time_add_hours: number;
+          avg_speed_mph: number;
+          mpg: number;
+          ppg: number;
+          fsc_percent: number | null;
+          baseline_price: number | null;
+          updated_at: string;
+        };
+        Insert: RateDefaultsInsert;
+        Update: Partial<RateDefaultsInsert>;
         Relationships: [];
       };
       loads: {

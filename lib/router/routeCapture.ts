@@ -3,7 +3,7 @@ import type { CaptureClassification, AccountKind } from "./classifyCapture";
 import type { AccountMatch } from "./matchAccount";
 
 export interface RouteResult {
-  routedTo: "corrective_actions" | "tasks" | "customer_topics" | null;
+  routedTo: "corrective_actions" | "tasks" | "customer_topics" | "rate_calculations" | null;
   routedId: string | null;
 }
 
