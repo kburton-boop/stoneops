@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Drawer } from "@/components/shell/Drawer";
+import { RateCalculatorTab } from "@/components/rateCalculator/RateCalculatorTab";
 
 interface CustomerAccountDetail {
   account: {
@@ -33,6 +34,7 @@ export function CustomerAccountDetailDrawer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingTopicId, setSavingTopicId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"overview" | "calculator">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -94,70 +96,91 @@ export function CustomerAccountDetailDrawer({
 
       {detail && (
         <div className="space-y-6">
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
-              Contacts ({detail.contacts.length})
-            </p>
-            {detail.contacts.length === 0 && <p className="text-sm text-ink-3">None on file.</p>}
-            <ul className="space-y-1">
-              {detail.contacts.map((contact) => (
-                <li key={contact.id} className="text-sm text-ink-4">
-                  {contact.name}
-                  {contact.role && <span className="text-ink-3"> — {contact.role}</span>}
-                </li>
-              ))}
-            </ul>
+          <div className="flex gap-1 text-xs">
+            {(["overview", "calculator"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setTab(option)}
+                className={`rounded px-2 py-1 capitalize ${
+                  tab === option ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
           </div>
 
-          {detail.account.notes && (
-            <div>
-              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-3">Notes</p>
-              <p className="whitespace-pre-wrap text-sm text-ink-4">{detail.account.notes}</p>
-            </div>
+          {tab === "calculator" && <RateCalculatorTab accountId={accountId} />}
+
+          {tab === "overview" && (
+            <>
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
+                  Contacts ({detail.contacts.length})
+                </p>
+                {detail.contacts.length === 0 && <p className="text-sm text-ink-3">None on file.</p>}
+                <ul className="space-y-1">
+                  {detail.contacts.map((contact) => (
+                    <li key={contact.id} className="text-sm text-ink-4">
+                      {contact.name}
+                      {contact.role && <span className="text-ink-3"> — {contact.role}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {detail.account.notes && (
+                <div>
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-3">Notes</p>
+                  <p className="whitespace-pre-wrap text-sm text-ink-4">{detail.account.notes}</p>
+                </div>
+              )}
+
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
+                  Topics ({detail.topics.length})
+                </p>
+                {detail.topics.length === 0 && <p className="text-sm text-ink-3">None on file.</p>}
+                <ul className="space-y-2">
+                  {detail.topics.map((topic) => (
+                    <li key={topic.id} className="rounded border border-ink-2 p-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm text-ink-4">{topic.title}</p>
+                          {topic.related_to && <p className="text-xs text-ink-3">{topic.related_to}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={savingTopicId === topic.id}
+                          onClick={() => toggleTopicStatus(topic.id, topic.status === "open" ? "discussed" : "open")}
+                          className={`shrink-0 rounded px-2 py-0.5 font-mono text-xs uppercase disabled:opacity-50 ${
+                            topic.status === "open" ? "bg-warm/20 text-warm" : "bg-stable/20 text-stable"
+                          }`}
+                        >
+                          {topic.status}
+                        </button>
+                      </div>
+                      {topic.status === "open" ? (
+                        <label className="mt-2 flex items-center gap-2 text-xs text-ink-3">
+                          Due
+                          <input
+                            type="date"
+                            value={topic.due_date ?? ""}
+                            disabled={savingTopicId === topic.id}
+                            onChange={(e) => updateDueDate(topic.id, e.target.value)}
+                            className="rounded border border-ink-2 bg-ink-0 px-2 py-1 text-xs text-ink-4 outline-none focus:border-accent disabled:opacity-50"
+                          />
+                        </label>
+                      ) : (
+                        topic.due_date && <p className="mt-2 text-xs text-ink-3">Was due {topic.due_date}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
           )}
-
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
-              Topics ({detail.topics.length})
-            </p>
-            {detail.topics.length === 0 && <p className="text-sm text-ink-3">None on file.</p>}
-            <ul className="space-y-2">
-              {detail.topics.map((topic) => (
-                <li key={topic.id} className="rounded border border-ink-2 p-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm text-ink-4">{topic.title}</p>
-                      {topic.related_to && <p className="text-xs text-ink-3">{topic.related_to}</p>}
-                    </div>
-                    <button
-                      type="button"
-                      disabled={savingTopicId === topic.id}
-                      onClick={() => toggleTopicStatus(topic.id, topic.status === "open" ? "discussed" : "open")}
-                      className={`shrink-0 rounded px-2 py-0.5 font-mono text-xs uppercase disabled:opacity-50 ${
-                        topic.status === "open" ? "bg-warm/20 text-warm" : "bg-stable/20 text-stable"
-                      }`}
-                    >
-                      {topic.status}
-                    </button>
-                  </div>
-                  {topic.status === "open" ? (
-                    <label className="mt-2 flex items-center gap-2 text-xs text-ink-3">
-                      Due
-                      <input
-                        type="date"
-                        value={topic.due_date ?? ""}
-                        disabled={savingTopicId === topic.id}
-                        onChange={(e) => updateDueDate(topic.id, e.target.value)}
-                        className="rounded border border-ink-2 bg-ink-0 px-2 py-1 text-xs text-ink-4 outline-none focus:border-accent disabled:opacity-50"
-                      />
-                    </label>
-                  ) : (
-                    topic.due_date && <p className="mt-2 text-xs text-ink-3">Was due {topic.due_date}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       )}
     </Drawer>
