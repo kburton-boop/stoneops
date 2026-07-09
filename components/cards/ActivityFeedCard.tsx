@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Panel } from "@/components/shell/Panel";
 import { AccountDetailDrawer } from "@/components/accounts/AccountDetailDrawer";
 import { CustomerAccountDetailDrawer } from "@/components/customerAccounts/CustomerAccountDetailDrawer";
 import type { ActivityFeedEntry, FeedCategory } from "@/lib/activityFeed/queries";
@@ -54,6 +53,7 @@ function formatTimestamp(iso: string): string {
 }
 
 export function ActivityFeedCard() {
+  const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState<FeedCategory | "all">("all");
   const [entries, setEntries] = useState<ActivityFeedEntry[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -81,6 +81,8 @@ export function ActivityFeedCard() {
       });
   }, []);
 
+  // Keeps polling even while collapsed, so the Needs Review badge on the
+  // collapsed header stays current without requiring the feed to be opened.
   useEffect(() => {
     load(0, false);
     const interval = setInterval(() => load(0, false), REFRESH_INTERVAL_MS);
@@ -88,6 +90,7 @@ export function ActivityFeedCard() {
   }, [load]);
 
   const visible = filter === "all" ? entries : entries.filter((entry) => entry.categories.includes(filter));
+  const needsReviewCount = entries.filter((entry) => entry.categories.includes("needs_review")).length;
 
   function handleEntryClick(entry: ActivityFeedEntry) {
     if (!entry.account_id || !entry.account_kind) return;
@@ -121,89 +124,109 @@ export function ActivityFeedCard() {
   }
 
   return (
-    <Panel title="Activity Feed">
-      <div className="mb-3 flex flex-wrap gap-1 text-xs">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            onClick={() => setFilter(f.key)}
-            className={`rounded px-2 py-1 ${
-              filter === f.key ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+    <section className="rounded-md border border-ink-2 bg-ink-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        className="flex w-full items-center justify-between px-4 py-2"
+      >
+        <span className="flex items-center gap-2">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-ink-3">Activity Feed</h2>
+          {needsReviewCount > 0 && (
+            <span className="rounded bg-hot/20 px-1.5 py-0.5 font-mono text-xs text-hot">
+              {needsReviewCount} needs review
+            </span>
+          )}
+        </span>
+        <span className="text-xs text-ink-3">{expanded ? "Collapse ▲" : "Expand ▼"}</span>
+      </button>
 
-      {error && <p className="text-sm text-hot">{error}</p>}
-      {loading && <p className="text-sm text-ink-3">Loading…</p>}
-      {!loading && visible.length === 0 && <p className="text-sm text-ink-3">Nothing here yet.</p>}
-
-      <ul className="space-y-1">
-        {visible.map((entry) => {
-          const clickable = Boolean(entry.account_id && entry.account_kind);
-          const deleting = deletingId === entry.id;
-          return (
-            <li key={entry.id} className="flex items-start gap-1 rounded hover:bg-ink-2">
+      {expanded && (
+        <div className="border-t border-ink-2 p-4">
+          <div className="mb-3 flex flex-wrap gap-1 text-xs">
+            {FILTERS.map((f) => (
               <button
+                key={f.key}
                 type="button"
-                onClick={() => handleEntryClick(entry)}
-                disabled={!clickable}
-                className={`flex min-w-0 flex-1 items-start justify-between gap-3 px-2 py-1.5 text-left text-sm ${
-                  clickable ? "" : "cursor-default"
+                onClick={() => setFilter(f.key)}
+                className={`rounded px-2 py-1 ${
+                  filter === f.key ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
                 }`}
               >
-                <div className="min-w-0">
-                  <p className="truncate text-ink-4">{entry.summary}</p>
-                  <p className="truncate text-xs text-ink-3">
-                    {formatTimestamp(entry.created_at)} · {entry.account_name ?? "unmatched"}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {entry.commitment_owner && entry.categories.includes("customer_topics") && (
-                    <span
-                      className={`rounded px-1.5 py-0.5 font-mono text-xs uppercase ${
-                        entry.commitment_owner === "me" ? "bg-hot/20 text-hot" : "bg-ink-2 text-ink-3"
-                      }`}
-                    >
-                      {COMMITMENT_LABEL[entry.commitment_owner]}
-                    </span>
-                  )}
-                  <span
-                    className={`rounded px-1.5 py-0.5 font-mono text-xs uppercase ${BADGE_STYLE[entry.category]}`}
-                  >
-                    {BADGE_LABEL[entry.category]}
-                  </span>
-                </div>
+                {f.label}
               </button>
-              <button
-                type="button"
-                onClick={() => handleRemoveFromFeed(entry)}
-                disabled={deleting}
-                title="Remove from feed"
-                className="shrink-0 rounded px-2 py-1.5 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
-              >
-                {deleting ? "…" : "✕"}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+            ))}
+          </div>
 
-      {hasMore && (
-        <button
-          type="button"
-          onClick={() => {
-            setLoadingMore(true);
-            load(entries.length, true);
-          }}
-          disabled={loadingMore}
-          className="mt-3 w-full rounded border border-ink-2 px-3 py-1.5 text-xs text-ink-3 hover:text-ink-4 disabled:opacity-50"
-        >
-          {loadingMore ? "Loading…" : "Load more"}
-        </button>
+          {error && <p className="text-sm text-hot">{error}</p>}
+          {loading && <p className="text-sm text-ink-3">Loading…</p>}
+          {!loading && visible.length === 0 && <p className="text-sm text-ink-3">Nothing here yet.</p>}
+
+          <ul className="space-y-1">
+            {visible.map((entry) => {
+              const clickable = Boolean(entry.account_id && entry.account_kind);
+              const deleting = deletingId === entry.id;
+              return (
+                <li key={entry.id} className="flex items-start gap-1 rounded hover:bg-ink-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEntryClick(entry)}
+                    disabled={!clickable}
+                    className={`flex min-w-0 flex-1 items-start justify-between gap-3 px-2 py-1.5 text-left text-sm ${
+                      clickable ? "" : "cursor-default"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-ink-4">{entry.summary}</p>
+                      <p className="truncate text-xs text-ink-3">
+                        {formatTimestamp(entry.created_at)} · {entry.account_name ?? "unmatched"}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {entry.commitment_owner && entry.categories.includes("customer_topics") && (
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-mono text-xs uppercase ${
+                            entry.commitment_owner === "me" ? "bg-hot/20 text-hot" : "bg-ink-2 text-ink-3"
+                          }`}
+                        >
+                          {COMMITMENT_LABEL[entry.commitment_owner]}
+                        </span>
+                      )}
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-mono text-xs uppercase ${BADGE_STYLE[entry.category]}`}
+                      >
+                        {BADGE_LABEL[entry.category]}
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFromFeed(entry)}
+                    disabled={deleting}
+                    title="Remove from feed"
+                    className="shrink-0 rounded px-2 py-1.5 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
+                  >
+                    {deleting ? "…" : "✕"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => {
+                setLoadingMore(true);
+                load(entries.length, true);
+              }}
+              disabled={loadingMore}
+              className="mt-3 w-full rounded border border-ink-2 px-3 py-1.5 text-xs text-ink-3 hover:text-ink-4 disabled:opacity-50"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          )}
+        </div>
       )}
 
       {openAccount && openAccount.kind === "plant" && (
@@ -212,6 +235,6 @@ export function ActivityFeedCard() {
       {openAccount && openAccount.kind === "customer" && (
         <CustomerAccountDetailDrawer accountId={openAccount.id} onClose={() => setOpenAccount(null)} />
       )}
-    </Panel>
+    </section>
   );
 }

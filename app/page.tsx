@@ -24,19 +24,15 @@ export default async function Home() {
 
   return (
     <Shell>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr_280px]">
-        <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <OperatorCard initialFocusText={focusText} />
-        </div>
-        <div className="space-y-4">
-          <SessionCard />
-          <AccountsKanbanCard accounts={accounts} />
-        </div>
-        <div className="space-y-4">
           <CorrectiveActionsCard items={correctiveActions} />
+          <SessionCard />
         </div>
-      </div>
-      <div className="mt-4">
+
+        <AccountsKanbanCard accounts={accounts} />
+
         <ActivityFeedCard />
       </div>
     </Shell>
