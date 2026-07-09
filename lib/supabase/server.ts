@@ -1,7 +1,8 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "./types";
 
-let client: ReturnType<typeof createClient> | undefined;
+let client: ReturnType<typeof createClient<Database>> | undefined;
 
 export function getServiceRoleClient() {
   if (client) return client;
@@ -15,7 +16,7 @@ export function getServiceRoleClient() {
     );
   }
 
-  client = createClient(url, serviceRoleKey, {
+  client = createClient<Database>(url, serviceRoleKey, {
     auth: { persistSession: false },
   });
   return client;

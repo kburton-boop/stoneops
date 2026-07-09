@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "./types";
 
-let client: ReturnType<typeof createClient> | undefined;
+let client: ReturnType<typeof createClient<Database>> | undefined;
 
 export function getPublicClient() {
   if (client) return client;
@@ -14,6 +15,6 @@ export function getPublicClient() {
     );
   }
 
-  client = createClient(url, publishableKey);
+  client = createClient<Database>(url, publishableKey);
   return client;
 }

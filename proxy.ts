@@ -2,12 +2,18 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME, safeCompare, verifySessionToken } from "@/lib/auth/session";
 
 const PUBLIC_PAGE_PATHS = new Set(["/login"]);
-const PUBLIC_API_PATHS = new Set(["/api/auth/login", "/api/auth/logout"]);
+// Routes that authenticate themselves (Telegram's own webhook secret
+// header, not our cookie/API_SECRET scheme) bypass the generic gate below.
+const SELF_AUTHENTICATING_API_PATHS = new Set([
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/telegram/webhook",
+]);
 
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (PUBLIC_API_PATHS.has(pathname)) {
+  if (SELF_AUTHENTICATING_API_PATHS.has(pathname)) {
     return NextResponse.next();
   }
 
