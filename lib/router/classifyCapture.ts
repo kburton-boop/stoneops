@@ -125,12 +125,15 @@ origin_city "Ghent", destination_city "Louisville"); one_way_miles if
 miles were spoken directly instead of a lane (e.g. "42 miles one way");
 net_tonnage, the net tons for this load if spoken (e.g. "19.5 tons" ->
 19.5); and overrides, any explicit spoken numeric override of a rate
-input for this quote only (e.g. "PPG at 4.60 today" -> {"ppg": 4.6},
-"target's $95 an hour for this one" -> {"target_per_hour": 95}). Only
-include a key in overrides if a number was actually spoken for it —
-never guess or fill in defaults. Leave origin_city/destination_city/
-one_way_miles/net_tonnage/overrides empty for every non-rate_request
-capture.
+input for this quote only — this applies to that one calculation and
+never changes the account's saved defaults (e.g. "PPG at 4.60 today" ->
+{"ppg": 4.6}, "target's $95 an hour for this one" ->
+{"target_per_hour": 95}, "target 75 an hour" -> {"target_per_hour": 75},
+"we want 80 per hour" -> {"target_per_hour": 80}, "aiming for 100 an
+hour" -> {"target_per_hour": 100}). Only include a key in overrides if a
+number was actually spoken for it — never guess or fill in defaults.
+Leave origin_city/destination_city/one_way_miles/net_tonnage/overrides
+empty for every non-rate_request capture.
 
 For general_note captures, tags may carry a short theme or two if one is
 obvious (e.g. "SpaceX", "shop plan", "personal") but a blank tags array

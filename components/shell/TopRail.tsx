@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const TABS = [
   { label: "Home", href: "/" },
@@ -10,6 +11,25 @@ const TABS = [
   { label: "Fleet", href: null },
   { label: "Review", href: "/review" },
 ];
+
+const CLOCK_TICK_MS = 30_000;
+
+function formatClock(date: Date): string {
+  const datePart = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const timePart = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return `${datePart} · ${timePart}`;
+}
+
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), CLOCK_TICK_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  return <span className="font-mono text-sm text-ink-3">{formatClock(now)}</span>;
+}
 
 export function TopRail() {
   const pathname = usePathname();
@@ -45,7 +65,7 @@ export function TopRail() {
           );
         })}
       </nav>
-      <span className="font-mono text-sm text-ink-3">Mon, Jan 12 · 8:42 AM</span>
+      <Clock />
     </header>
   );
 }

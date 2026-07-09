@@ -76,6 +76,15 @@ function formatOutput(key: string, value: number): string {
   return String(Math.round(value * 100) / 100);
 }
 
+function stringifyCalculationInputs(inputs: Record<string, unknown>): Partial<Record<FieldKey, string>> {
+  const result: Partial<Record<FieldKey, string>> = {};
+  for (const key of ALL_FIELD_KEYS) {
+    const value = inputs[key];
+    if (typeof value === "number") result[key] = String(value);
+  }
+  return result;
+}
+
 export function RateCalculatorTab({ accountId }: { accountId: string }) {
   const [formulaType, setFormulaType] = useState<FormulaType>("percentage_fsc");
   const [values, setValues] = useState<Record<FieldKey, string>>(DEFAULT_VALUES);
@@ -90,26 +99,50 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
   const [defaultsError, setDefaultsError] = useState<string | null>(null);
   const [defaultsSaved, setDefaultsSaved] = useState(false);
 
+  // Prefer the account's most recent calculation (formula-level fields AND
+  // trip-specific ones like miles/tonnage/lane) so a voice-driven
+  // rate_request shows up here exactly as heard in Telegram. Only fall
+  // back to the saved defaults — formula-level fields only, trip fields
+  // stay blank — when there's no calculation yet to show.
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/rate-defaults?account_id=${accountId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { defaults: RateDefaultsRow | null } | null) => {
-        if (cancelled || !data?.defaults) return;
-        const defaults = data.defaults;
-        setFormulaType(defaults.formula_type);
-        setValues((prev) => ({
-          ...prev,
-          target_per_hour: String(defaults.target_per_hour),
-          time_add_hours: String(defaults.time_add_hours),
-          avg_speed_mph: String(defaults.avg_speed_mph),
-          mpg: String(defaults.mpg),
-          ppg: String(defaults.ppg),
-          fsc_percent: defaults.fsc_percent != null ? String(defaults.fsc_percent) : prev.fsc_percent,
-          baseline_price: defaults.baseline_price != null ? String(defaults.baseline_price) : prev.baseline_price,
-        }));
-      })
+    Promise.all([
+      fetch(`/api/rate-calculations?account_id=${accountId}`).then((res) => (res.ok ? res.json() : null)),
+      fetch(`/api/rate-defaults?account_id=${accountId}`).then((res) => (res.ok ? res.json() : null)),
+    ])
+      .then(
+        ([calcData, defaultsData]: [
+          { calculation: { formula_type: FormulaType; inputs: Record<string, unknown> } | null } | null,
+          { defaults: RateDefaultsRow | null } | null,
+        ]) => {
+          if (cancelled) return;
+
+          const calculation = calcData?.calculation ?? null;
+          const defaults = defaultsData?.defaults ?? null;
+
+          if (calculation) {
+            setFormulaType(calculation.formula_type);
+            setValues((prev) => ({ ...prev, ...stringifyCalculationInputs(calculation.inputs) }));
+            if (typeof calculation.inputs.origin === "string") setOrigin(calculation.inputs.origin);
+            if (typeof calculation.inputs.destination === "string") {
+              setDestination(calculation.inputs.destination);
+            }
+          } else if (defaults) {
+            setFormulaType(defaults.formula_type);
+            setValues((prev) => ({
+              ...prev,
+              target_per_hour: String(defaults.target_per_hour),
+              time_add_hours: String(defaults.time_add_hours),
+              avg_speed_mph: String(defaults.avg_speed_mph),
+              mpg: String(defaults.mpg),
+              ppg: String(defaults.ppg),
+              fsc_percent: defaults.fsc_percent != null ? String(defaults.fsc_percent) : prev.fsc_percent,
+              baseline_price: defaults.baseline_price != null ? String(defaults.baseline_price) : prev.baseline_price,
+            }));
+          }
+        },
+      )
       .catch(() => {});
 
     return () => {
