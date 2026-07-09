@@ -3,10 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 export type CaptureKind = "corrective_action" | "task" | "load_note" | "account_note" | "finance_note";
 export type CaptureUrgency = "today" | "this_week" | "this_month" | "someday";
 export type CaptureSeverity = "hot" | "warm" | "resolved";
+export type AccountKind = "plant" | "customer";
 
 export interface CaptureClassification {
   kind: CaptureKind;
   account_name_guess: string | null;
+  account_kind: AccountKind;
   urgency: CaptureUrgency;
   severity: CaptureSeverity;
   tags: string[];
@@ -22,6 +24,7 @@ const KIND_VALUES: CaptureKind[] = [
 ];
 const URGENCY_VALUES: CaptureUrgency[] = ["today", "this_week", "this_month", "someday"];
 const SEVERITY_VALUES: CaptureSeverity[] = ["hot", "warm", "resolved"];
+const ACCOUNT_KIND_VALUES: AccountKind[] = ["plant", "customer"];
 
 const SYSTEM_PROMPT = `You classify short voice-note transcripts or typed notes from a
 logistics fleet coordinator into a structured capture for an ops database.
@@ -32,8 +35,20 @@ issue, driver complaint), task (something to follow up on), load_note
 a plant/account relationship), finance_note (a rate, FSC, or margin
 comment).
 
-account_name_guess should be the account/plant name this refers to, if
-any. If a location could refer to more than one account (for example
+account_kind must be exactly one of: plant (a physical/operational
+location — spills, breakdowns, roll-off failures, equipment, gate
+delays, DOT issues) or customer (a business relationship — meetings,
+rate negotiations, scope discussions, follow-ups, or anything discussed
+with a named contact person rather than about a physical site). If the
+capture mentions a person's first name without a company context (e.g.
+"talked to Clint about rates"), that is almost always a customer
+capture, since customer relationships are the ones with named contacts.
+
+account_name_guess should be the account/plant/customer name this
+refers to, if any — this can be a company name (e.g. "RMR", "DKPI") or
+a contact's name if that's what was said (e.g. "Clint"); the matching
+system will resolve a contact name back to the right customer account.
+If a location could refer to more than one account (for example
 "Ghent" could mean either an NTP-G Shear account or a Nucor Ghent
 account, both located in Ghent, KY), prefer whichever company name is
 actually mentioned; if you cannot tell, leave account_name_guess empty
@@ -51,14 +66,15 @@ const CLASSIFY_TOOL: Anthropic.Tool = {
       kind: { type: "string", enum: KIND_VALUES },
       account_name_guess: {
         type: "string",
-        description: "Account/plant name this refers to, or empty string if none/unclear.",
+        description: "Account/plant/customer or contact name this refers to, or empty string if none/unclear.",
       },
+      account_kind: { type: "string", enum: ACCOUNT_KIND_VALUES },
       urgency: { type: "string", enum: URGENCY_VALUES },
       severity: { type: "string", enum: SEVERITY_VALUES },
       tags: { type: "array", items: { type: "string" } },
       summary: { type: "string", description: "One sentence summary suitable as a title." },
     },
-    required: ["kind", "urgency", "severity", "tags", "summary"],
+    required: ["kind", "account_kind", "urgency", "severity", "tags", "summary"],
   },
 };
 
@@ -76,6 +92,9 @@ function normalize(input: Record<string, unknown>): CaptureClassification {
   const kind = KIND_VALUES.includes(input.kind as CaptureKind)
     ? (input.kind as CaptureKind)
     : "task";
+  const accountKind = ACCOUNT_KIND_VALUES.includes(input.account_kind as AccountKind)
+    ? (input.account_kind as AccountKind)
+    : "plant";
   const urgency = URGENCY_VALUES.includes(input.urgency as CaptureUrgency)
     ? (input.urgency as CaptureUrgency)
     : "this_week";
@@ -89,7 +108,7 @@ function normalize(input: Record<string, unknown>): CaptureClassification {
   const tags = Array.isArray(input.tags) ? input.tags.filter((tag) => typeof tag === "string") : [];
   const summary = typeof input.summary === "string" && input.summary.trim() ? input.summary.trim() : "(no summary)";
 
-  return { kind, account_name_guess: accountNameGuess, urgency, severity, tags, summary };
+  return { kind, account_name_guess: accountNameGuess, account_kind: accountKind, urgency, severity, tags, summary };
 }
 
 export async function classifyCapture(text: string): Promise<CaptureClassification> {

@@ -35,7 +35,7 @@ export async function getAccountsForKanban(userId: string): Promise<AccountSumma
 
   const [{ data: accounts, error: accountsError }, { data: correctiveActions, error: caError }] =
     await Promise.all([
-      supabase.from("accounts").select("*").eq("user_id", userId).order("name"),
+      supabase.from("accounts").select("*").eq("user_id", userId).eq("kind", "plant").order("name"),
       supabase
         .from("corrective_actions")
         .select("id, account_id, title, severity, created_at")
@@ -86,6 +86,7 @@ export async function getAccountDetail(userId: string, accountId: string): Promi
     .select("*")
     .eq("id", accountId)
     .eq("user_id", userId)
+    .eq("kind", "plant")
     .maybeSingle();
 
   if (accountError) throw accountError;

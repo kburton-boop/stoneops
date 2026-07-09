@@ -2,6 +2,7 @@ type AccountsInsert = {
   id?: string;
   user_id: string;
   name: string;
+  kind: "plant" | "customer";
   plant_location?: string | null;
   contact_name?: string | null;
   contact_role?: string | null;
@@ -9,6 +10,26 @@ type AccountsInsert = {
   notes?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
+}
+
+type CustomerContactsInsert = {
+  id?: string;
+  account_id: string;
+  name: string;
+  role?: string | null;
+  created_at?: string;
+}
+
+type CustomerTopicsInsert = {
+  id?: string;
+  user_id: string;
+  account_id?: string | null;
+  title: string;
+  description?: string | null;
+  status?: "open" | "discussed";
+  related_to?: string | null;
+  created_at?: string;
+  discussed_at?: string | null;
 }
 
 type LoadsInsert = {
@@ -109,6 +130,7 @@ export interface Database {
           id: string;
           user_id: string;
           name: string;
+          kind: "plant" | "customer";
           plant_location: string | null;
           contact_name: string | null;
           contact_role: string | null;
@@ -119,6 +141,34 @@ export interface Database {
         };
         Insert: AccountsInsert;
         Update: Partial<AccountsInsert>;
+        Relationships: [];
+      };
+      customer_contacts: {
+        Row: {
+          id: string;
+          account_id: string;
+          name: string;
+          role: string | null;
+          created_at: string;
+        };
+        Insert: CustomerContactsInsert;
+        Update: Partial<CustomerContactsInsert>;
+        Relationships: [];
+      };
+      customer_topics: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string | null;
+          title: string;
+          description: string | null;
+          status: "open" | "discussed";
+          related_to: string | null;
+          created_at: string;
+          discussed_at: string | null;
+        };
+        Insert: CustomerTopicsInsert;
+        Update: Partial<CustomerTopicsInsert>;
         Relationships: [];
       };
       loads: {

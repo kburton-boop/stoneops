@@ -20,8 +20,8 @@ function isOneOf<T extends string>(value: string, options: readonly T[]): value 
   return (options as readonly string[]).includes(value);
 }
 
-function isRoutedTable(value: string | null): value is "corrective_actions" | "tasks" {
-  return value === "corrective_actions" || value === "tasks";
+function isRoutedTable(value: string | null): value is "corrective_actions" | "tasks" | "customer_topics" {
+  return value === "corrective_actions" || value === "tasks" || value === "customer_topics";
 }
 
 export async function POST(request: Request) {
@@ -115,7 +115,7 @@ async function handleMessage(message: TelegramMessage) {
     return;
   }
 
-  const route = await routeCapture(classification, account?.id ?? null, text, userId);
+  const route = await routeCapture(classification, account, text, userId);
 
   if (route.routedTo) {
     await supabase
@@ -125,7 +125,7 @@ async function handleMessage(message: TelegramMessage) {
   }
 
   const confirmationText = buildConfirmationText(classification, account?.name ?? null, route);
-  const keyboard = buildCorrectionKeyboard(capture.id, classification);
+  const keyboard = buildCorrectionKeyboard(capture.id, classification, route.routedTo);
   await sendMessage(chatId, confirmationText, keyboard);
 }
 
@@ -168,6 +168,8 @@ async function handleCallbackQuery(callback: TelegramCallbackQuery) {
       await supabase.from("corrective_actions").update({ account_id: accountId }).eq("id", capture.routed_id);
     } else if (capture.routed_to === "tasks" && capture.routed_id) {
       await supabase.from("tasks").update({ account_id: accountId }).eq("id", capture.routed_id);
+    } else if (capture.routed_to === "customer_topics" && capture.routed_id) {
+      await supabase.from("customer_topics").update({ account_id: accountId }).eq("id", capture.routed_id);
     }
     confirmationSuffix = action === "n" ? "Cleared account." : "Account updated.";
   } else if (

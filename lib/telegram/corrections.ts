@@ -15,6 +15,10 @@ export const ACCOUNT_CODES: { code: string; name: string; label: string }[] = [
   { code: "NBRAND", name: "Nucor Brandenburg", label: "Nucor Brandenburg" },
   { code: "NGHENT", name: "Nucor Ghent", label: "Nucor Ghent" },
   { code: "MAT", name: "Matalco", label: "Matalco" },
+  { code: "RMR", name: "RMR", label: "RMR" },
+  { code: "DJJ", name: "DJJ", label: "DJJ" },
+  { code: "FPT", name: "FPT", label: "FPT" },
+  { code: "AIMR", name: "AIM Recycling", label: "AIM Recycling" },
 ];
 
 export async function resolveAccountCode(code: string, userId: string) {
@@ -35,6 +39,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 export function buildCorrectionKeyboard(
   captureId: string,
   classification: CaptureClassification,
+  routedTo: RouteResult["routedTo"],
 ): InlineKeyboardMarkup {
   const accountRows = chunk(ACCOUNT_CODES, 3).map((row) =>
     row.map((account) => ({
@@ -46,7 +51,7 @@ export function buildCorrectionKeyboard(
 
   const rows = [...accountRows];
 
-  if (classification.kind === "corrective_action") {
+  if (routedTo === "corrective_actions") {
     rows.push(
       (["hot", "warm", "resolved"] as const).map((value) => ({
         text: value === "hot" ? "🔴 Hot" : value === "warm" ? "🟡 Warm" : "✅ Resolved",
@@ -55,7 +60,7 @@ export function buildCorrectionKeyboard(
     );
   }
 
-  if (classification.kind === "task") {
+  if (routedTo === "tasks") {
     rows.push(
       (["today", "this_week", "this_month", "someday"] as const).map((value) => ({
         text: value.replace("_", " "),
@@ -77,11 +82,14 @@ export function buildConfirmationText(
     `Account: ${accountName ?? "unmatched — tap to fix"}`,
   ];
 
-  if (classification.kind === "corrective_action") {
+  if (route.routedTo === "corrective_actions") {
     lines.push(`Severity: ${classification.severity}`);
   }
-  if (classification.kind === "task") {
+  if (route.routedTo === "tasks") {
     lines.push(`Urgency: ${classification.urgency.replace("_", " ")}`);
+  }
+  if (route.routedTo === "customer_topics") {
+    lines.push("Filed as a customer topic");
   }
   if (classification.tags.length > 0) {
     lines.push(`Tags: ${classification.tags.join(", ")}`);

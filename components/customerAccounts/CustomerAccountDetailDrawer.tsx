@@ -1,0 +1,142 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Drawer } from "@/components/shell/Drawer";
+
+interface CustomerAccountDetail {
+  account: {
+    id: string;
+    name: string;
+    notes: string | null;
+  };
+  contacts: { id: string; name: string; role: string | null }[];
+  topics: {
+    id: string;
+    title: string;
+    description: string | null;
+    status: "open" | "discussed";
+    related_to: string | null;
+    created_at: string;
+    discussed_at: string | null;
+  }[];
+}
+
+export function CustomerAccountDetailDrawer({
+  accountId,
+  onClose,
+}: {
+  accountId: string;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<CustomerAccountDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [savingTopicId, setSavingTopicId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`/api/customer-accounts/${accountId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load account");
+        return res.json();
+      })
+      .then((data: CustomerAccountDetail) => {
+        if (!cancelled) setDetail(data);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load this customer.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
+  async function toggleTopicStatus(topicId: string, nextStatus: "open" | "discussed") {
+    setSavingTopicId(topicId);
+    try {
+      const res = await fetch(`/api/customer-topics/${topicId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!res.ok) throw new Error("Update failed");
+      const updated = await res.json();
+      setDetail((prev) =>
+        prev
+          ? { ...prev, topics: prev.topics.map((t) => (t.id === topicId ? { ...t, ...updated } : t)) }
+          : prev,
+      );
+    } catch {
+      setError("Couldn't update that topic.");
+    } finally {
+      setSavingTopicId(null);
+    }
+  }
+
+  return (
+    <Drawer title={detail?.account.name ?? "Customer"} onClose={onClose}>
+      {loading && <p className="text-sm text-ink-3">Loading…</p>}
+      {error && <p className="text-sm text-hot">{error}</p>}
+
+      {detail && (
+        <div className="space-y-6">
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
+              Contacts ({detail.contacts.length})
+            </p>
+            {detail.contacts.length === 0 && <p className="text-sm text-ink-3">None on file.</p>}
+            <ul className="space-y-1">
+              {detail.contacts.map((contact) => (
+                <li key={contact.id} className="text-sm text-ink-4">
+                  {contact.name}
+                  {contact.role && <span className="text-ink-3"> — {contact.role}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {detail.account.notes && (
+            <div>
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-3">Notes</p>
+              <p className="whitespace-pre-wrap text-sm text-ink-4">{detail.account.notes}</p>
+            </div>
+          )}
+
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
+              Topics ({detail.topics.length})
+            </p>
+            {detail.topics.length === 0 && <p className="text-sm text-ink-3">None on file.</p>}
+            <ul className="space-y-2">
+              {detail.topics.map((topic) => (
+                <li key={topic.id} className="rounded border border-ink-2 p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm text-ink-4">{topic.title}</p>
+                      {topic.related_to && <p className="text-xs text-ink-3">{topic.related_to}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={savingTopicId === topic.id}
+                      onClick={() => toggleTopicStatus(topic.id, topic.status === "open" ? "discussed" : "open")}
+                      className={`shrink-0 rounded px-2 py-0.5 font-mono text-xs uppercase disabled:opacity-50 ${
+                        topic.status === "open" ? "bg-warm/20 text-warm" : "bg-stable/20 text-stable"
+                      }`}
+                    >
+                      {topic.status}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </Drawer>
+  );
+}
