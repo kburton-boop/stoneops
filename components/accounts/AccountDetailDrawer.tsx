@@ -52,6 +52,7 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
   const [loading, setLoading] = useState(true);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingActionId, setDeletingActionId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +92,24 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
       setError("Couldn't refresh the summary.");
     } finally {
       setSummaryLoading(false);
+    }
+  }
+
+  async function handleDeleteAction(actionId: string, title: string) {
+    const confirmed = window.confirm(`Delete "${title}"? This can't be undone.`);
+    if (!confirmed) return;
+
+    setDeletingActionId(actionId);
+    try {
+      const res = await fetch(`/api/corrective-actions/${actionId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setDetail((prev) =>
+        prev ? { ...prev, correctiveActions: prev.correctiveActions.filter((ca) => ca.id !== actionId) } : prev,
+      );
+    } catch {
+      setError("Couldn't delete that corrective action.");
+    } finally {
+      setDeletingActionId(null);
     }
   }
 
@@ -153,10 +172,21 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
             {detail.correctiveActions.length === 0 && <p className="text-sm text-ink-3">None on file.</p>}
             <ul className="space-y-1">
               {detail.correctiveActions.map((ca) => (
-                <li key={ca.id} className="flex items-center justify-between text-sm">
-                  <span className="text-ink-4">{ca.title}</span>
-                  <span className={`font-mono text-xs uppercase ${SEVERITY_STYLES[ca.severity]}`}>
-                    {ca.severity}
+                <li key={ca.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate text-ink-4">{ca.title}</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className={`font-mono text-xs uppercase ${SEVERITY_STYLES[ca.severity]}`}>
+                      {ca.severity}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAction(ca.id, ca.title)}
+                      disabled={deletingActionId === ca.id}
+                      title="Delete"
+                      className="rounded px-1 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
+                    >
+                      {deletingActionId === ca.id ? "…" : "✕"}
+                    </button>
                   </span>
                 </li>
               ))}

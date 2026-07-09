@@ -10,6 +10,7 @@ export interface RouteResult {
     | "rate_calculations"
     | "general_notes"
     | "brief_request"
+    | "user_focus"
     | null;
   routedId: string | null;
 }

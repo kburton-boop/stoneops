@@ -70,3 +70,24 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/corrective
 
   return NextResponse.json(data);
 }
+
+export async function DELETE(_req: NextRequest, ctx: RouteContext<"/api/corrective-actions/[id]">) {
+  const { id } = await ctx.params;
+  const userId = getUserId();
+
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase
+    .from("corrective_actions")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true });
+}

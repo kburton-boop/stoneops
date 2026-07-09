@@ -61,6 +61,7 @@ export function ActivityFeedCard() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openAccount, setOpenAccount] = useState<{ id: string; kind: "plant" | "customer" } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback((offset: number, append: boolean) => {
     fetch(`/api/activity-feed?limit=${PAGE_SIZE}&offset=${offset}`)
@@ -93,6 +94,32 @@ export function ActivityFeedCard() {
     setOpenAccount({ id: entry.account_id, kind: entry.account_kind });
   }
 
+  async function handleRemoveFromFeed(entry: ActivityFeedEntry) {
+    const confirmed = window.confirm(
+      `Remove this from the feed?\n\n"${entry.summary}"\n\nThis only clears the log line — it won't delete the ${
+        entry.category === "corrective_actions"
+          ? "corrective action"
+          : entry.category === "customer_topics"
+            ? "customer topic"
+            : entry.category === "rate_calculations"
+              ? "rate calculation"
+              : "record"
+      } it created, if any.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingId(entry.id);
+    try {
+      const res = await fetch(`/api/activity-feed/${entry.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+    } catch {
+      setError("Couldn't remove that entry.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <Panel title="Activity Feed">
       <div className="mb-3 flex flex-wrap gap-1 text-xs">
@@ -117,14 +144,15 @@ export function ActivityFeedCard() {
       <ul className="space-y-1">
         {visible.map((entry) => {
           const clickable = Boolean(entry.account_id && entry.account_kind);
+          const deleting = deletingId === entry.id;
           return (
-            <li key={entry.id}>
+            <li key={entry.id} className="flex items-start gap-1 rounded hover:bg-ink-2">
               <button
                 type="button"
                 onClick={() => handleEntryClick(entry)}
                 disabled={!clickable}
-                className={`flex w-full items-start justify-between gap-3 rounded px-2 py-1.5 text-left text-sm ${
-                  clickable ? "hover:bg-ink-2" : "cursor-default"
+                className={`flex min-w-0 flex-1 items-start justify-between gap-3 px-2 py-1.5 text-left text-sm ${
+                  clickable ? "" : "cursor-default"
                 }`}
               >
                 <div className="min-w-0">
@@ -149,6 +177,15 @@ export function ActivityFeedCard() {
                     {BADGE_LABEL[entry.category]}
                   </span>
                 </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRemoveFromFeed(entry)}
+                disabled={deleting}
+                title="Remove from feed"
+                className="shrink-0 rounded px-2 py-1.5 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
+              >
+                {deleting ? "…" : "✕"}
               </button>
             </li>
           );

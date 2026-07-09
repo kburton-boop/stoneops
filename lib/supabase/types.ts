@@ -43,6 +43,13 @@ type GeneralNotesInsert = {
   created_at?: string;
 }
 
+type UserFocusInsert = {
+  id?: string;
+  user_id: string;
+  focus_text?: string | null;
+  updated_at?: string;
+}
+
 type RateCalculationsInsert = {
   id?: string;
   user_id: string;
@@ -219,6 +226,17 @@ export interface Database {
         };
         Insert: GeneralNotesInsert;
         Update: Partial<GeneralNotesInsert>;
+        Relationships: [];
+      };
+      user_focus: {
+        Row: {
+          id: string;
+          user_id: string;
+          focus_text: string | null;
+          updated_at: string;
+        };
+        Insert: UserFocusInsert;
+        Update: Partial<UserFocusInsert>;
         Relationships: [];
       };
       rate_calculations: {

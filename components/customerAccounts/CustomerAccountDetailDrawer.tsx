@@ -40,6 +40,7 @@ export function CustomerAccountDetailDrawer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingTopicId, setSavingTopicId] = useState<string | null>(null);
+  const [deletingTopicId, setDeletingTopicId] = useState<string | null>(null);
   const [tab, setTab] = useState<"overview" | "calculator">("overview");
 
   useEffect(() => {
@@ -93,6 +94,22 @@ export function CustomerAccountDetailDrawer({
 
   function updateDueDate(topicId: string, dueDate: string) {
     return patchTopic(topicId, { due_date: dueDate || null });
+  }
+
+  async function handleDeleteTopic(topicId: string, title: string) {
+    const confirmed = window.confirm(`Delete "${title}"? This can't be undone.`);
+    if (!confirmed) return;
+
+    setDeletingTopicId(topicId);
+    try {
+      const res = await fetch(`/api/customer-topics/${topicId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setDetail((prev) => (prev ? { ...prev, topics: prev.topics.filter((t) => t.id !== topicId) } : prev));
+    } catch {
+      setError("Couldn't delete that topic.");
+    } finally {
+      setDeletingTopicId(null);
+    }
   }
 
   return (
@@ -175,6 +192,15 @@ export function CustomerAccountDetailDrawer({
                             }`}
                           >
                             {topic.status}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTopic(topic.id, topic.title)}
+                            disabled={deletingTopicId === topic.id}
+                            title="Delete"
+                            className="rounded px-1 text-xs text-ink-3 hover:text-hot disabled:opacity-50"
+                          >
+                            {deletingTopicId === topic.id ? "…" : "✕"}
                           </button>
                         </div>
                       </div>

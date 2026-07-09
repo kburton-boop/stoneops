@@ -8,7 +8,8 @@ export type CaptureKind =
   | "finance_note"
   | "rate_request"
   | "general_note"
-  | "brief_request";
+  | "brief_request"
+  | "set_focus";
 export type CaptureUrgency = "today" | "this_week" | "this_month" | "someday";
 export type CaptureSeverity = "hot" | "warm" | "resolved";
 export type AccountKind = "plant" | "customer";
@@ -51,6 +52,8 @@ export interface CaptureClassification {
   // Set whenever the capture reads as a customer-topic-shaped commitment,
   // regardless of kind — routeCapture only persists it for customer_topics.
   commitment_owner: CommitmentOwner | null;
+  // set_focus-only field — null for every other kind.
+  focus_text: string | null;
 }
 
 const KIND_VALUES: CaptureKind[] = [
@@ -62,6 +65,7 @@ const KIND_VALUES: CaptureKind[] = [
   "rate_request",
   "general_note",
   "brief_request",
+  "set_focus",
 ];
 const URGENCY_VALUES: CaptureUrgency[] = ["today", "this_week", "this_month", "someday"];
 const SEVERITY_VALUES: CaptureSeverity[] = ["hot", "warm", "resolved"];
@@ -80,11 +84,14 @@ customer — phrases like "X wants a rate", "need a quote for X", "what
 do we charge X for", "RMR wants a rate from Ghent to Louisville"),
 brief_request (asking to be briefed or caught up on an account before a
 call — phrases like "brief me on X", "catch me up on X before this
-call", "what's the status with X"), general_note (the fallback — use
-this when a capture doesn't clearly fit any of the other kinds and isn't
-a substantive customer-relationship discussion: personal reminders,
-ideas, industry trivia, things worth remembering that aren't a task, an
-issue, a rate request, a brief request, or a customer commitment).
+call", "what's the status with X"), set_focus (the coordinator is
+declaring what they want to focus on today — phrases like "today my
+focus is X", "focus for today is X", "make my focus X"), general_note
+(the fallback — use this when a capture doesn't clearly fit any of the
+other kinds and isn't a substantive customer-relationship discussion:
+personal reminders, ideas, industry trivia, things worth remembering
+that aren't a task, an issue, a rate request, a brief request, a focus
+declaration, or a customer commitment).
 
 account_kind must be exactly one of: plant (a physical/operational
 location — spills, breakdowns, roll-off failures, equipment, gate
@@ -128,6 +135,12 @@ capture.
 For general_note captures, tags may carry a short theme or two if one is
 obvious (e.g. "SpaceX", "shop plan", "personal") but a blank tags array
 is completely fine — don't strain to invent a tag.
+
+For set_focus captures only, also extract focus_text: the focus
+statement itself with the trigger phrase stripped (e.g. "today my focus
+is chasing the NTP-G FSC gap before Friday" -> focus_text "Chasing the
+NTP-G FSC gap before Friday"). Leave focus_text empty for every other
+kind.
 
 commitment_owner applies to captures about a customer relationship (the
 kind of thing that would become a customer topic): set it to "me" when
@@ -188,6 +201,10 @@ const CLASSIFY_TOOL: Anthropic.Tool = {
         type: "string",
         enum: COMMITMENT_OWNER_VALUES,
         description: "Who owes the next move on a customer-relationship capture, if clear from the language.",
+      },
+      focus_text: {
+        type: "string",
+        description: "set_focus only: the focus statement with the trigger phrase stripped, or empty string.",
       },
     },
     required: ["kind", "account_kind", "urgency", "severity", "tags", "summary"],
@@ -259,6 +276,7 @@ function normalize(input: Record<string, unknown>): CaptureClassification {
     net_tonnage: normalizeNumber(input.net_tonnage),
     overrides: normalizeOverrides(input.overrides),
     commitment_owner: commitmentOwner,
+    focus_text: normalizeString(input.focus_text),
   };
 }
 

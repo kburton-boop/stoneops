@@ -7,6 +7,7 @@ import { resolveAccountAndContacts, mergeDraftAccount } from "@/lib/router/resol
 import { routeCapture, type RouteResult } from "@/lib/router/routeCapture";
 import { handleRateRequest } from "@/lib/router/handleRateRequest";
 import { handleBriefRequest } from "@/lib/router/handleBriefRequest";
+import { setFocus } from "@/lib/userFocus/queries";
 import { transcribeVoice } from "@/lib/transcription/transcribeVoice";
 import { downloadVoice, sendMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
 import {
@@ -143,6 +144,7 @@ async function handleMessage(message: TelegramMessage) {
   let route: RouteResult;
   let rateReplyText: string | null = null;
   let briefReplyText: string | null = null;
+  let focusReplyText: string | null = null;
 
   if (classification.kind === "rate_request" && account && account.kind === "customer") {
     const rateResult = await handleRateRequest(classification, account, userId);
@@ -157,6 +159,11 @@ async function handleMessage(message: TelegramMessage) {
       route = { routedTo: null, routedId: null };
       briefReplyText = "Which account did you mean? Try again with the company name.";
     }
+  } else if (classification.kind === "set_focus") {
+    const focusText = classification.focus_text ?? classification.summary;
+    const focusRow = await setFocus(userId, focusText);
+    route = { routedTo: "user_focus", routedId: focusRow.id };
+    focusReplyText = `Focus set: ${focusText}`;
   } else {
     route = await routeCapture(classification, account, text, userId);
   }
@@ -168,9 +175,10 @@ async function handleMessage(message: TelegramMessage) {
       .eq("id", capture.id);
   }
 
-  // Both kinds bypass the account-correction keyboard entirely: general_note
-  // has no account to get wrong (per Part 1c), and brief_request is a
-  // read-only lookup with nothing left to correct once answered.
+  // These kinds all bypass the account-correction keyboard entirely:
+  // general_note has no account to get wrong (per Part 1c), brief_request
+  // is a read-only lookup with nothing left to correct once answered, and
+  // set_focus is a personal directive with no account involved at all.
   if (classification.kind === "general_note") {
     await sendMessage(chatId, "Noted.");
     return;
@@ -178,6 +186,11 @@ async function handleMessage(message: TelegramMessage) {
 
   if (classification.kind === "brief_request") {
     await sendMessage(chatId, briefReplyText ?? "Couldn't generate that brief.");
+    return;
+  }
+
+  if (classification.kind === "set_focus") {
+    await sendMessage(chatId, focusReplyText ?? "Couldn't set that focus.");
     return;
   }
 
