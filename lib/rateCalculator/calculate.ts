@@ -21,7 +21,22 @@ export interface TypeAOutputs {
   rate_per_gross_ton: number;
 }
 
-export function calculateTypeA(inputs: TypeAInputs): TypeAOutputs {
+// Postgres `numeric` columns (rate_defaults) come back from PostgREST as
+// strings, not JS numbers, no matter what the hand-written Database type
+// declares. `+` silently falls back to string concatenation when either
+// operand isn't a number (e.g. 3.2 + "1" === "3.21", not 4.2), so every
+// input is coerced explicitly here rather than trusting the caller's types.
+export function calculateTypeA(raw: TypeAInputs): TypeAOutputs {
+  const inputs: TypeAInputs = {
+    target_per_hour: Number(raw.target_per_hour),
+    one_way_miles: Number(raw.one_way_miles),
+    time_add_hours: Number(raw.time_add_hours),
+    avg_speed_mph: Number(raw.avg_speed_mph),
+    mpg: Number(raw.mpg),
+    ppg: Number(raw.ppg),
+    fsc_percent: Number(raw.fsc_percent),
+    net_tonnage: Number(raw.net_tonnage),
+  };
   const round_trip_miles = inputs.one_way_miles * 2;
   const time_hours = round_trip_miles / inputs.avg_speed_mph + inputs.time_add_hours;
   const linehaul = time_hours * inputs.target_per_hour;
@@ -75,7 +90,17 @@ function mround(value: number, multiple: number): number {
   return Math.round(value / multiple) * multiple;
 }
 
-export function calculateTypeB(inputs: TypeBInputs): TypeBOutputs {
+export function calculateTypeB(raw: TypeBInputs): TypeBOutputs {
+  const inputs: TypeBInputs = {
+    target_per_hour: Number(raw.target_per_hour),
+    one_way_miles: Number(raw.one_way_miles),
+    time_add_hours: Number(raw.time_add_hours),
+    avg_speed_mph: Number(raw.avg_speed_mph),
+    mpg: Number(raw.mpg),
+    ppg: Number(raw.ppg),
+    baseline_price: Number(raw.baseline_price),
+    net_tonnage: Number(raw.net_tonnage),
+  };
   const round_trip_miles = inputs.one_way_miles * 2;
   const time_hours = round_trip_miles / inputs.avg_speed_mph + inputs.time_add_hours;
   const linehaul = time_hours * inputs.target_per_hour;

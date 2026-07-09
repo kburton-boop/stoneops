@@ -1,4 +1,4 @@
-import type { CaptureClassification } from "./classifyCapture";
+import type { CaptureClassification, RateOverrideKey } from "./classifyCapture";
 import type { AccountMatch } from "./matchAccount";
 import { getRateDefaults } from "@/lib/rateCalculator/rateDefaults";
 import { lookupDistance } from "@/lib/rateCalculator/distance";
@@ -10,6 +10,16 @@ export interface RateRequestResult {
   routedId: string | null;
   replyText: string;
 }
+
+const OVERRIDE_LABELS: Record<RateOverrideKey, string> = {
+  target_per_hour: "target",
+  avg_speed_mph: "avg speed",
+  mpg: "MPG",
+  ppg: "PPG",
+  fsc_percent: "FSC%",
+  baseline_price: "baseline price",
+  time_add_hours: "add'l time",
+};
 
 function noSaveResult(replyText: string): RateRequestResult {
   return { routedTo: null, routedId: null, replyText };
@@ -99,11 +109,36 @@ export async function handleRateRequest(
       ? `${classification.origin_city} to ${classification.destination_city}`
       : `${Math.round(oneWayMiles * 10) / 10} mi`;
 
-  const replyText = [
+  // Full transparency on what actually drove this number, so the reply
+  // alone is trustworthy without opening the Calculator tab to check.
+  const targetPerHour = commonInputs.target_per_hour;
+  const targetOverridden = overrides.target_per_hour != null;
+  const targetLine = targetOverridden
+    ? `(target: ${targetPerHour}/hr override, ${account.name} default: ${defaults.target_per_hour}/hr)`
+    : `(target: ${targetPerHour}/hr, ${account.name} saved default)`;
+
+  const otherOverrideKeys: RateOverrideKey[] = [
+    "avg_speed_mph",
+    "mpg",
+    "ppg",
+    "time_add_hours",
+    defaults.formula_type === "percentage_fsc" ? "fsc_percent" : "baseline_price",
+  ];
+  const otherOverrideNotes = otherOverrideKeys
+    .filter((key) => overrides[key] != null)
+    .map((key) => `${OVERRIDE_LABELS[key]} ${overrides[key]} (default ${defaults[key]})`);
+
+  const replyLines = [
     `${account.name} — ${laneLabel}, ${classification.net_tonnage} NT`,
     `All In: $${outputs.all_in.toFixed(2)} | Flat Rate: $${outputs.flat_rate.toFixed(2)}`,
     `Rate/Net Ton: $${outputs.rate_per_net_ton.toFixed(2)} | Rate/Gross Ton: $${outputs.rate_per_gross_ton.toFixed(2)}`,
-  ].join("\n");
+    targetLine,
+  ];
+  if (otherOverrideNotes.length > 0) {
+    replyLines.push(`Other overrides: ${otherOverrideNotes.join(", ")}`);
+  }
+
+  const replyText = replyLines.join("\n");
 
   return { routedTo: "rate_calculations", routedId: calc.id, replyText };
 }

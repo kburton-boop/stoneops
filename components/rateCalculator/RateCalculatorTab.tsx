@@ -80,7 +80,14 @@ function stringifyCalculationInputs(inputs: Record<string, unknown>): Partial<Re
   const result: Partial<Record<FieldKey, string>> = {};
   for (const key of ALL_FIELD_KEYS) {
     const value = inputs[key];
-    if (typeof value === "number") result[key] = String(value);
+    // Tolerate numeric-looking strings too — a calculation saved before the
+    // rate_defaults numeric-string fix (or any other jsonb round-trip) can
+    // have "90" instead of 90, and this field shouldn't render blank for it.
+    if (typeof value === "number" && Number.isFinite(value)) {
+      result[key] = String(value);
+    } else if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+      result[key] = value.trim();
+    }
   }
   return result;
 }

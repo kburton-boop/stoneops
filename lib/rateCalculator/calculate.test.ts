@@ -61,6 +61,32 @@ test("calculateTypeB MROUND rounds to the nearest 5 miles, not truncating", () =
   assert.equal(calculateTypeB({ ...baseTypeB(), one_way_miles: 108 }).rounded_one_way_miles, 110);
 });
 
+test("calculateTypeB is correct even when inputs arrive as numeric strings (PostgREST numeric-column quirk)", () => {
+  // Postgres `numeric` columns come back from PostgREST as strings, not
+  // numbers. `+` string-concatenates instead of adding when either operand
+  // isn't a number (e.g. 3.2 + "2" === "3.22", not 5.2), which would
+  // silently corrupt time_hours and everything derived from it if this
+  // function trusted its declared types instead of coercing explicitly.
+  const stringInputs = {
+    target_per_hour: "69.265",
+    one_way_miles: 103,
+    time_add_hours: "2",
+    avg_speed_mph: "45",
+    mpg: "5",
+    ppg: "4.458",
+    baseline_price: "3.5",
+    net_tonnage: 19.5,
+  } as unknown as Parameters<typeof calculateTypeB>[0];
+
+  const result = calculateTypeB(stringInputs);
+
+  assertCloseTo(result.time_hours, 6.5778, 0.001, "time_hours");
+  assertCloseTo(result.all_in, 639.28, 0.01, "all_in");
+  assertCloseTo(result.flat_rate, 599.04, 0.01, "flat_rate");
+  assertCloseTo(result.rate_per_net_ton, 30.72, 0.01, "rate_per_net_ton");
+  assertCloseTo(result.rate_per_gross_ton, 34.41, 0.01, "rate_per_gross_ton");
+});
+
 function baseTypeB() {
   return {
     target_per_hour: 69.265,

@@ -15,6 +15,25 @@ export interface RateDefaultsInput {
   baseline_price: number | null;
 }
 
+// Postgres `numeric` columns come back from PostgREST as strings (to avoid
+// precision loss), not JS numbers, despite what the hand-written Database
+// type declares. Left uncoerced, a defaults-sourced value can silently
+// corrupt arithmetic downstream (e.g. `+` string-concatenates instead of
+// adding) or fail a `typeof === "number"` check on retrieval. Normalize
+// once here so every consumer gets real numbers.
+function normalizeRow(row: RateDefaultsRow): RateDefaultsRow {
+  return {
+    ...row,
+    target_per_hour: Number(row.target_per_hour),
+    time_add_hours: Number(row.time_add_hours),
+    avg_speed_mph: Number(row.avg_speed_mph),
+    mpg: Number(row.mpg),
+    ppg: Number(row.ppg),
+    fsc_percent: row.fsc_percent != null ? Number(row.fsc_percent) : null,
+    baseline_price: row.baseline_price != null ? Number(row.baseline_price) : null,
+  };
+}
+
 export async function getRateDefaults(accountId: string): Promise<RateDefaultsRow | null> {
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase
@@ -24,7 +43,7 @@ export async function getRateDefaults(accountId: string): Promise<RateDefaultsRo
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  return data ? normalizeRow(data) : null;
 }
 
 export async function upsertRateDefaults(
@@ -53,5 +72,5 @@ export async function upsertRateDefaults(
     .single();
 
   if (error) throw error;
-  return data;
+  return normalizeRow(data);
 }
