@@ -98,6 +98,7 @@ type WeeklyReviewsInsert = {
   accounts_to_follow_up?: string[] | null;
   top_3_next_week?: string | null;
   created_at?: string;
+  sealed_at?: string | null;
 }
 
 export interface Database {
@@ -232,6 +233,7 @@ export interface Database {
           accounts_to_follow_up: string[] | null;
           top_3_next_week: string | null;
           created_at: string;
+          sealed_at: string | null;
         };
         Insert: WeeklyReviewsInsert;
         Update: Partial<WeeklyReviewsInsert>;
