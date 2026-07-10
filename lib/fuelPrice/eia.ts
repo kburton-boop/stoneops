@@ -1,11 +1,16 @@
 // EIA series ID for "U.S. PADD 2 (Midwest) No. 2 Diesel Retail Prices,
 // Weekly" ($/gal) — verified against EIA's own series browser/history
 // pages (eia.gov/dnav/pet/hist/LeafHandler.ashx?n=PET&s=EMD_EPD2D_PTE_R20_DPG&f=W),
-// not guessed. R20 is EIA's area code for PADD 2. Queried via the v2 API's
-// backward-compatible /seriesid/ route, which resolves a legacy series ID
-// directly without needing to know the underlying facet parameters
-// (product/duoarea/process) for the petroleum/pri/gnd route.
-const EIA_SERIES_ID = "EMD_EPD2D_PTE_R20_DPG";
+// not guessed. R20 is EIA's area code for PADD 2.
+//
+// Queried via the v2 API's backward-compatible /seriesid/ route, which
+// per EIA's own API docs requires the FULL legacy APIv1 series ID format
+// — category.series.frequency (their documented example:
+// ELEC.SALES.CO-RES.A) — not the bare series code alone. "PET" is the
+// category prefix for petroleum series, "W" is the weekly frequency
+// suffix. Passing just the bare code 404s/errors; this full form is
+// required.
+const EIA_SERIES_ID = "PET.EMD_EPD2D_PTE_R20_DPG.W";
 
 export interface EiaDieselPrice {
   ppg: number;
