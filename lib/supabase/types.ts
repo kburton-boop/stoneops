@@ -183,6 +183,14 @@ type EmailDraftsInsert = {
   created_at?: string;
 }
 
+type CurrentFuelPriceInsert = {
+  id?: string;
+  ppg: number;
+  source?: string;
+  period_date: string;
+  fetched_at?: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -433,6 +441,18 @@ export interface Database {
         };
         Insert: EmailDraftsInsert;
         Update: Partial<EmailDraftsInsert>;
+        Relationships: [];
+      };
+      current_fuel_price: {
+        Row: {
+          id: string;
+          ppg: number;
+          source: string;
+          period_date: string;
+          fetched_at: string;
+        };
+        Insert: CurrentFuelPriceInsert;
+        Update: Partial<CurrentFuelPriceInsert>;
         Relationships: [];
       };
     };

@@ -4,6 +4,8 @@ import { getRateDefaults, type RateDefaultsRow } from "@/lib/rateCalculator/rate
 import { lookupDistance } from "@/lib/rateCalculator/distance";
 import { calculateTypeA, calculateTypeB } from "@/lib/rateCalculator/calculate";
 import { saveCalculation } from "@/lib/rateCalculator/queries";
+import { getCurrentFuelPrice, type FuelPriceRow } from "@/lib/fuelPrice/queries";
+import { resolvePpg, formatPpgLine } from "@/lib/rateCalculator/resolvePpg";
 
 export interface RateRequestResult {
   routedTo: "rate_calculations" | null;
@@ -22,10 +24,11 @@ const OVERRIDE_LABELS: Record<RateOverrideKey, string> = {
 };
 
 // Fleet-typical constants used only for a standalone quote when no account
-// (and therefore no saved rate_defaults) is available to supply them —
+// (and therefore no saved rate_defaults) is available to supply them, and
+// PPG only as a last resort if the EIA cron has never successfully run —
 // avg speed and MPG barely vary truck to truck, but PPG is a real diesel
 // price that moves week to week, so every standalone reply must flag
-// exactly which of these got assumed rather than spoken.
+// exactly which of these got assumed rather than spoken or pulled live.
 const STANDALONE_DEFAULT_AVG_SPEED_MPH = 45;
 const STANDALONE_DEFAULT_MPG = 5;
 const STANDALONE_DEFAULT_PPG = 4.458;
@@ -59,10 +62,17 @@ export async function handleRateRequest(
   account: AccountMatch | null,
   userId: string,
 ): Promise<RateRequestResult> {
+  // Fetched once and threaded through both paths below — PPG now comes
+  // from the live EIA PADD 2 price by default (spoken override still wins,
+  // saved/fixed PPG is now only a last-resort fallback if EIA data has
+  // never been fetched), so both the account-defaults path and the
+  // standalone path need it.
+  const currentFuelPrice = await getCurrentFuelPrice();
+
   if (account && account.kind === "customer") {
     const defaults = await getRateDefaults(account.id);
     if (defaults) {
-      return calculateFromDefaults(classification, account, defaults, userId);
+      return calculateFromDefaults(classification, account, defaults, userId, currentFuelPrice);
     }
     return noSaveResult(
       `No saved rate defaults for ${account.name} yet — set them up in the Calculator tab first, or tell me all the inputs and I'll calculate it this once without saving defaults.`,
@@ -73,7 +83,7 @@ export async function handleRateRequest(
   // ad-hoc calculation from whatever was actually spoken, rather than
   // silently letting this fall through to the generic customer_topics
   // catch-all with nothing calculated.
-  return calculateStandalone(classification, userId);
+  return calculateStandalone(classification, userId, currentFuelPrice);
 }
 
 async function calculateFromDefaults(
@@ -81,6 +91,7 @@ async function calculateFromDefaults(
   account: AccountMatch,
   defaults: RateDefaultsRow,
   userId: string,
+  currentFuelPrice: FuelPriceRow | null,
 ): Promise<RateRequestResult> {
   const milesResult = await resolveOneWayMiles(classification);
   if ("error" in milesResult) return noSaveResult(milesResult.error);
@@ -98,13 +109,15 @@ async function calculateFromDefaults(
   }
 
   const overrides = classification.overrides ?? {};
+  const ppgResolution = resolvePpg(overrides.ppg, currentFuelPrice, defaults.ppg);
+
   const commonInputs = {
     target_per_hour: overrides.target_per_hour ?? defaults.target_per_hour,
     one_way_miles: oneWayMiles,
     time_add_hours: overrides.time_add_hours ?? defaults.time_add_hours,
     avg_speed_mph: overrides.avg_speed_mph ?? defaults.avg_speed_mph,
     mpg: overrides.mpg ?? defaults.mpg,
-    ppg: overrides.ppg ?? defaults.ppg,
+    ppg: ppgResolution.ppg,
     net_tonnage: classification.net_tonnage,
   };
 
@@ -153,10 +166,13 @@ async function calculateFromDefaults(
     ? `(target: ${targetPerHour}/hr override, ${account.name} default: ${defaults.target_per_hour}/hr)`
     : `(target: ${targetPerHour}/hr, ${account.name} saved default)`;
 
+  // PPG is handled separately from the other overrides below (its own
+  // formatPpgLine, since — unlike the rest — it's no longer just
+  // "spoken override vs. account default," it's "spoken override vs. live
+  // EIA price vs. account default."
   const otherOverrideKeys: RateOverrideKey[] = [
     "avg_speed_mph",
     "mpg",
-    "ppg",
     "time_add_hours",
     defaults.formula_type === "percentage_fsc" ? "fsc_percent" : "baseline_price",
   ];
@@ -173,6 +189,8 @@ async function calculateFromDefaults(
   if (otherOverrideNotes.length > 0) {
     replyLines.push(`Other overrides: ${otherOverrideNotes.join(", ")}`);
   }
+  const ppgLine = formatPpgLine(ppgResolution, `${account.name} saved default`);
+  if (ppgLine) replyLines.push(ppgLine);
 
   return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
 }
@@ -180,6 +198,7 @@ async function calculateFromDefaults(
 async function calculateStandalone(
   classification: CaptureClassification,
   userId: string,
+  currentFuelPrice: FuelPriceRow | null,
 ): Promise<RateRequestResult> {
   const overrides = classification.overrides ?? {};
 
@@ -203,9 +222,11 @@ async function calculateStandalone(
   }
 
   // Every field below this point is guaranteed present given the checks
-  // above, except avg speed/MPG/PPG/add'l time, which fall back to fleet-
+  // above, except avg speed/MPG/add'l time, which fall back to fleet-
   // typical constants — flagged explicitly in the reply so a stale
-  // assumption (PPG especially) never gets quoted to a customer unnoticed.
+  // assumption never gets quoted to a customer unnoticed. PPG follows its
+  // own override > live EIA price > fixed-constant priority via
+  // resolvePpg, handled separately below.
   const oneWayMiles = (milesResult as { miles: number }).miles;
   const assumed: string[] = [];
 
@@ -215,8 +236,7 @@ async function calculateStandalone(
   const mpg = overrides.mpg ?? STANDALONE_DEFAULT_MPG;
   if (overrides.mpg == null) assumed.push(`MPG ${mpg}`);
 
-  const ppg = overrides.ppg ?? STANDALONE_DEFAULT_PPG;
-  if (overrides.ppg == null) assumed.push(`PPG $${ppg}`);
+  const ppgResolution = resolvePpg(overrides.ppg, currentFuelPrice, STANDALONE_DEFAULT_PPG);
 
   const timeAddHours = overrides.time_add_hours ?? STANDALONE_DEFAULT_TIME_ADD_HOURS;
   if (overrides.time_add_hours == null) assumed.push(`add'l time ${timeAddHours} hrs`);
@@ -227,7 +247,7 @@ async function calculateStandalone(
     time_add_hours: timeAddHours,
     avg_speed_mph: avgSpeedMph,
     mpg,
-    ppg,
+    ppg: ppgResolution.ppg,
     net_tonnage: classification.net_tonnage as number,
   };
 
@@ -265,6 +285,8 @@ async function calculateStandalone(
   if (assumed.length > 0) {
     replyLines.push(`Assumed (not spoken): ${assumed.join(", ")}`);
   }
+  const ppgLine = formatPpgLine(ppgResolution, "fixed estimate");
+  if (ppgLine) replyLines.push(ppgLine);
 
   return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
 }

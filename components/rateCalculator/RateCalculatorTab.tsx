@@ -2,9 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { calculateTypeA, calculateTypeB } from "@/lib/rateCalculator/calculate";
+import { formatShortDate } from "@/lib/rateCalculator/resolvePpg";
 import type { Database } from "@/lib/supabase/types";
 
 type RateDefaultsRow = Database["public"]["Tables"]["rate_defaults"]["Row"];
+
+interface FuelPrice {
+  ppg: number;
+  source: string;
+  period_date: string;
+  fetched_at: string;
+  is_stale: boolean;
+}
 
 type FormulaType = "percentage_fsc" | "per_mile_fsc";
 
@@ -105,6 +114,22 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [defaultsError, setDefaultsError] = useState<string | null>(null);
   const [defaultsSaved, setDefaultsSaved] = useState(false);
+  const [fuelPrice, setFuelPrice] = useState<FuelPrice | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/fuel-price")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { fuelPrice: FuelPrice | null } | null) => {
+        if (!cancelled) setFuelPrice(data?.fuelPrice ?? null);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Prefer the account's most recent calculation (formula-level fields AND
   // trip-specific ones like miles/tonnage/lane) so a voice-driven
@@ -182,6 +207,14 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
   }
 
   const numeric = toNumbers(values);
+  // PPG falls back to the live EIA price whenever the field is left blank
+  // — mutating it in place here means every downstream calculation/save
+  // path below automatically picks it up without needing its own
+  // fallback logic.
+  const typedPpg = numeric.ppg;
+  const usingLivePpg = typedPpg === null && fuelPrice !== null;
+  if (usingLivePpg) numeric.ppg = fuelPrice!.ppg;
+
   const requiredKeys: FieldKey[] = [
     ...COMMON_FIELDS.map((f) => f.key),
     formulaType === "percentage_fsc" ? "fsc_percent" : "baseline_price",
@@ -335,8 +368,16 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
               type="number"
               value={values[field.key]}
               onChange={(e) => setField(field.key, e.target.value)}
+              placeholder={field.key === "ppg" && fuelPrice ? String(fuelPrice.ppg) : undefined}
               className="min-h-11 w-full rounded border border-ink-2 bg-ink-0 px-3 py-1 text-sm text-ink-4 outline-none focus:border-accent"
             />
+            {field.key === "ppg" && (
+              <p className={`mt-1 text-xs ${fuelPrice?.is_stale ? "text-warm" : "text-ink-3"}`}>
+                {fuelPrice
+                  ? `EIA PADD2: $${fuelPrice.ppg.toFixed(3)} (updated ${formatShortDate(fuelPrice.period_date)})${usingLivePpg ? " — using this" : ""}${fuelPrice.is_stale ? " ⚠ hasn't updated in 10+ days" : ""}`
+                  : "No live EIA fuel price on file yet — leave blank to fall back to a saved default."}
+              </p>
+            )}
           </div>
         ))}
         {formulaType === "percentage_fsc" ? (
