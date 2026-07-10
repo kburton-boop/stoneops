@@ -143,10 +143,15 @@ never changes the account's saved defaults (e.g. "PPG at 4.60 today" ->
 {"ppg": 4.6}, "target's $95 an hour for this one" ->
 {"target_per_hour": 95}, "target 75 an hour" -> {"target_per_hour": 75},
 "we want 80 per hour" -> {"target_per_hour": 80}, "aiming for 100 an
-hour" -> {"target_per_hour": 100}). Only include a key in overrides if a
-number was actually spoken for it — never guess or fill in defaults.
-Leave origin_city/destination_city/one_way_miles/net_tonnage/overrides
-empty for every non-rate_request capture.
+hour" -> {"target_per_hour": 100}). fsc_percent is always a FRACTION, not
+a whole percentage number — divide by 100 before returning it (e.g. "25%
+FSC" -> {"fsc_percent": 0.25}, "24.5 percent fuel surcharge" ->
+{"fsc_percent": 0.245}); this matches how it's stored and used everywhere
+else in the app, and returning 25 instead of 0.25 would silently wreck
+the calculation. Only include a key in overrides if a number was actually
+spoken for it — never guess or fill in defaults. Leave origin_city/
+destination_city/one_way_miles/net_tonnage/overrides empty for every
+non-rate_request capture.
 
 For general_note captures, tags may carry a short theme or two if one is
 obvious (e.g. "SpaceX", "shop plan", "personal") but a blank tags array

@@ -1,6 +1,6 @@
 import type { CaptureClassification, RateOverrideKey } from "./classifyCapture";
 import type { AccountMatch } from "./matchAccount";
-import { getRateDefaults } from "@/lib/rateCalculator/rateDefaults";
+import { getRateDefaults, type RateDefaultsRow } from "@/lib/rateCalculator/rateDefaults";
 import { lookupDistance } from "@/lib/rateCalculator/distance";
 import { calculateTypeA, calculateTypeB } from "@/lib/rateCalculator/calculate";
 import { saveCalculation } from "@/lib/rateCalculator/queries";
@@ -21,39 +21,75 @@ const OVERRIDE_LABELS: Record<RateOverrideKey, string> = {
   time_add_hours: "add'l time",
 };
 
+// Fleet-typical constants used only for a standalone quote when no account
+// (and therefore no saved rate_defaults) is available to supply them —
+// avg speed and MPG barely vary truck to truck, but PPG is a real diesel
+// price that moves week to week, so every standalone reply must flag
+// exactly which of these got assumed rather than spoken.
+const STANDALONE_DEFAULT_AVG_SPEED_MPH = 45;
+const STANDALONE_DEFAULT_MPG = 5;
+const STANDALONE_DEFAULT_PPG = 4.458;
+const STANDALONE_DEFAULT_TIME_ADD_HOURS = 2;
+
 function noSaveResult(replyText: string): RateRequestResult {
   return { routedTo: null, routedId: null, replyText };
 }
 
+async function resolveOneWayMiles(
+  classification: CaptureClassification,
+): Promise<{ miles: number } | { error: string } | { missing: true }> {
+  if (classification.one_way_miles != null) {
+    return { miles: classification.one_way_miles };
+  }
+  if (classification.origin_city && classification.destination_city) {
+    try {
+      const distance = await lookupDistance(classification.origin_city, classification.destination_city);
+      return { miles: distance.miles };
+    } catch {
+      return {
+        error: `Couldn't look up mileage from ${classification.origin_city} to ${classification.destination_city} — try again or give me the miles directly.`,
+      };
+    }
+  }
+  return { missing: true };
+}
+
 export async function handleRateRequest(
   classification: CaptureClassification,
-  account: AccountMatch,
+  account: AccountMatch | null,
   userId: string,
 ): Promise<RateRequestResult> {
-  const defaults = await getRateDefaults(account.id);
-  if (!defaults) {
+  if (account && account.kind === "customer") {
+    const defaults = await getRateDefaults(account.id);
+    if (defaults) {
+      return calculateFromDefaults(classification, account, defaults, userId);
+    }
     return noSaveResult(
       `No saved rate defaults for ${account.name} yet — set them up in the Calculator tab first, or tell me all the inputs and I'll calculate it this once without saving defaults.`,
     );
   }
 
-  let oneWayMiles = classification.one_way_miles;
-  if (oneWayMiles == null && classification.origin_city && classification.destination_city) {
-    try {
-      const distance = await lookupDistance(classification.origin_city, classification.destination_city);
-      oneWayMiles = distance.miles;
-    } catch {
-      return noSaveResult(
-        `Couldn't look up mileage from ${classification.origin_city} to ${classification.destination_city} — try again or give me the miles directly.`,
-      );
-    }
-  }
+  // No usable customer account resolved at all — try a fully standalone,
+  // ad-hoc calculation from whatever was actually spoken, rather than
+  // silently letting this fall through to the generic customer_topics
+  // catch-all with nothing calculated.
+  return calculateStandalone(classification, userId);
+}
 
-  if (oneWayMiles == null) {
+async function calculateFromDefaults(
+  classification: CaptureClassification,
+  account: AccountMatch,
+  defaults: RateDefaultsRow,
+  userId: string,
+): Promise<RateRequestResult> {
+  const milesResult = await resolveOneWayMiles(classification);
+  if ("error" in milesResult) return noSaveResult(milesResult.error);
+  if ("missing" in milesResult) {
     return noSaveResult(
       `Got the rate request for ${account.name} but no mileage or lane was mentioned — say the miles or the origin/destination and I'll calculate it.`,
     );
   }
+  const oneWayMiles = milesResult.miles;
 
   if (classification.net_tonnage == null) {
     return noSaveResult(
@@ -138,7 +174,97 @@ export async function handleRateRequest(
     replyLines.push(`Other overrides: ${otherOverrideNotes.join(", ")}`);
   }
 
-  const replyText = replyLines.join("\n");
+  return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
+}
 
-  return { routedTo: "rate_calculations", routedId: calc.id, replyText };
+async function calculateStandalone(
+  classification: CaptureClassification,
+  userId: string,
+): Promise<RateRequestResult> {
+  const overrides = classification.overrides ?? {};
+
+  const milesResult = await resolveOneWayMiles(classification);
+  if ("error" in milesResult) return noSaveResult(milesResult.error);
+
+  const missing: string[] = [];
+  if ("missing" in milesResult) missing.push("the miles or the origin/destination");
+  if (overrides.target_per_hour == null) missing.push("a target $/hour");
+  if (classification.net_tonnage == null) missing.push("the net tonnage");
+
+  const fscPercent = overrides.fsc_percent ?? null;
+  const baselinePrice = overrides.baseline_price ?? null;
+  const askFscStructure = fscPercent == null && baselinePrice == null;
+  if (askFscStructure) missing.push("whether to use a percentage FSC or a per-mile baseline fuel price");
+
+  if (missing.length > 0) {
+    return noSaveResult(
+      `No account matched, so I'd need to calculate this standalone — still missing ${missing.join(", ")}.`,
+    );
+  }
+
+  // Every field below this point is guaranteed present given the checks
+  // above, except avg speed/MPG/PPG/add'l time, which fall back to fleet-
+  // typical constants — flagged explicitly in the reply so a stale
+  // assumption (PPG especially) never gets quoted to a customer unnoticed.
+  const oneWayMiles = (milesResult as { miles: number }).miles;
+  const assumed: string[] = [];
+
+  const avgSpeedMph = overrides.avg_speed_mph ?? STANDALONE_DEFAULT_AVG_SPEED_MPH;
+  if (overrides.avg_speed_mph == null) assumed.push(`avg speed ${avgSpeedMph} mph`);
+
+  const mpg = overrides.mpg ?? STANDALONE_DEFAULT_MPG;
+  if (overrides.mpg == null) assumed.push(`MPG ${mpg}`);
+
+  const ppg = overrides.ppg ?? STANDALONE_DEFAULT_PPG;
+  if (overrides.ppg == null) assumed.push(`PPG $${ppg}`);
+
+  const timeAddHours = overrides.time_add_hours ?? STANDALONE_DEFAULT_TIME_ADD_HOURS;
+  if (overrides.time_add_hours == null) assumed.push(`add'l time ${timeAddHours} hrs`);
+
+  const commonInputs = {
+    target_per_hour: overrides.target_per_hour as number,
+    one_way_miles: oneWayMiles,
+    time_add_hours: timeAddHours,
+    avg_speed_mph: avgSpeedMph,
+    mpg,
+    ppg,
+    net_tonnage: classification.net_tonnage as number,
+  };
+
+  const formulaType = fscPercent != null ? "percentage_fsc" : "per_mile_fsc";
+  let outputs: ReturnType<typeof calculateTypeA> | ReturnType<typeof calculateTypeB>;
+  let inputs: Record<string, unknown>;
+
+  if (formulaType === "percentage_fsc") {
+    inputs = { ...commonInputs, fsc_percent: fscPercent as number };
+    outputs = calculateTypeA({ ...commonInputs, fsc_percent: fscPercent as number });
+  } else {
+    inputs = { ...commonInputs, baseline_price: baselinePrice as number };
+    outputs = calculateTypeB({ ...commonInputs, baseline_price: baselinePrice as number });
+  }
+
+  if (classification.origin_city && classification.destination_city) {
+    inputs.origin = classification.origin_city;
+    inputs.destination = classification.destination_city;
+  }
+
+  const calc = await saveCalculation(userId, null, formulaType, inputs, outputs as unknown as Record<string, unknown>);
+
+  const laneLabel =
+    classification.origin_city && classification.destination_city
+      ? `${classification.origin_city} to ${classification.destination_city}`
+      : `${Math.round(oneWayMiles * 10) / 10} mi`;
+
+  const replyLines = [
+    `Standalone quote (not linked to an account):`,
+    `${laneLabel}, ${classification.net_tonnage} NT`,
+    `All In: $${outputs.all_in.toFixed(2)} | Flat Rate: $${outputs.flat_rate.toFixed(2)}`,
+    `Rate/Net Ton: $${outputs.rate_per_net_ton.toFixed(2)} | Rate/Gross Ton: $${outputs.rate_per_gross_ton.toFixed(2)}`,
+    `Target: ${commonInputs.target_per_hour}/hr, ${formulaType === "percentage_fsc" ? `FSC ${((fscPercent as number) * 100).toFixed(1)}%` : `baseline $${baselinePrice}/gal`}`,
+  ];
+  if (assumed.length > 0) {
+    replyLines.push(`Assumed (not spoken): ${assumed.join(", ")}`);
+  }
+
+  return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
 }

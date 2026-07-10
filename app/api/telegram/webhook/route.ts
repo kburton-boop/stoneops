@@ -167,8 +167,16 @@ async function handleMessage(message: TelegramMessage) {
   let focusReplyText: string | null = null;
   let draftEmailReplyText: string | null = null;
 
-  if (classification.kind === "rate_request" && account && account.kind === "customer") {
-    const rateResult = await handleRateRequest(classification, account, userId);
+  if (classification.kind === "rate_request") {
+    // handleRateRequest itself decides between the saved-defaults path (a
+    // resolved customer account) and the standalone ad-hoc path (no
+    // account, an unmatched name, or a non-customer match) — it no longer
+    // requires a resolved account up front.
+    const rateResult = await handleRateRequest(
+      classification,
+      account && account.kind === "customer" ? account : null,
+      userId,
+    );
     route = { routedTo: rateResult.routedTo, routedId: rateResult.routedId };
     rateReplyText = rateResult.replyText;
   } else if (classification.kind === "brief_request") {
