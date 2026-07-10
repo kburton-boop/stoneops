@@ -13,6 +13,7 @@ import { handleDraftEmailRequest } from "@/lib/router/handleDraftEmailRequest";
 import { setFocus } from "@/lib/userFocus/queries";
 import { transcribeVoice } from "@/lib/transcription/transcribeVoice";
 import { downloadVoice, sendMessage, sendLongMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
+import { isAllowedSender } from "@/lib/telegram/auth";
 import {
   buildConfirmationText,
   buildCorrectionKeyboard,
@@ -71,8 +72,7 @@ export async function POST(request: Request) {
 }
 
 async function handleMessage(message: TelegramMessage) {
-  const allowedUserId = process.env.TELEGRAM_USER_ID;
-  if (!allowedUserId || String(message.from?.id) !== allowedUserId) {
+  if (!isAllowedSender(message.from?.id)) {
     return;
   }
 
@@ -250,13 +250,7 @@ async function handleMessage(message: TelegramMessage) {
 }
 
 async function handleCallbackQuery(callback: TelegramCallbackQuery) {
-  const allowedUserId = process.env.TELEGRAM_USER_ID;
-  if (
-    !allowedUserId ||
-    String(callback.from.id) !== allowedUserId ||
-    !callback.data ||
-    !callback.message
-  ) {
+  if (!isAllowedSender(callback.from.id) || !callback.data || !callback.message) {
     return;
   }
 
