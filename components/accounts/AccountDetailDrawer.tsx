@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Drawer } from "@/components/shell/Drawer";
 import { CallPrepsTab } from "@/components/callPreps/CallPrepsTab";
+import { EmailDraftsTab } from "@/components/emailDrafts/EmailDraftsTab";
 
 interface AccountDetail {
   account: {
@@ -54,7 +55,7 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingActionId, setDeletingActionId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "callPreps">("overview");
+  const [tab, setTab] = useState<"overview" | "callPreps" | "drafts">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -137,7 +138,7 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
           </div>
 
           <div className="flex gap-1 text-xs">
-            {(["overview", "callPreps"] as const).map((option) => (
+            {(["overview", "callPreps", "drafts"] as const).map((option) => (
               <button
                 key={option}
                 type="button"
@@ -146,12 +147,14 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
                   tab === option ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
                 }`}
               >
-                {option === "callPreps" ? "Call Preps" : option}
+                {option === "callPreps" ? "Call Preps" : option === "drafts" ? "Drafts" : option}
               </button>
             ))}
           </div>
 
           {tab === "callPreps" && <CallPrepsTab accountId={accountId} />}
+
+          {tab === "drafts" && <EmailDraftsTab accountId={accountId} />}
 
           {tab === "overview" && (
           <>

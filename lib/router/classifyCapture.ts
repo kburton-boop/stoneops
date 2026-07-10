@@ -9,7 +9,8 @@ export type CaptureKind =
   | "rate_request"
   | "general_note"
   | "brief_request"
-  | "set_focus";
+  | "set_focus"
+  | "draft_email_request";
 export type CaptureUrgency = "today" | "this_week" | "this_month" | "someday";
 export type CaptureSeverity = "hot" | "warm" | "resolved";
 export type AccountKind = "plant" | "customer";
@@ -66,6 +67,7 @@ const KIND_VALUES: CaptureKind[] = [
   "general_note",
   "brief_request",
   "set_focus",
+  "draft_email_request",
 ];
 const URGENCY_VALUES: CaptureUrgency[] = ["today", "this_week", "this_month", "someday"];
 const SEVERITY_VALUES: CaptureSeverity[] = ["hot", "warm", "resolved"];
@@ -86,20 +88,31 @@ brief_request (asking to be briefed or caught up on an account before a
 call — phrases like "brief me on X", "catch me up on X before this
 call", "what's the status with X"), set_focus (the coordinator is
 declaring what they want to focus on today — phrases like "today my
-focus is X", "focus for today is X", "make my focus X"), general_note
-(the fallback — use this when a capture doesn't clearly fit any of the
-other kinds and isn't a substantive customer-relationship discussion:
-personal reminders, ideas, industry trivia, things worth remembering
-that aren't a task, an issue, a rate request, a brief request, a focus
-declaration, or a customer commitment).
+focus is X", "focus for today is X", "make my focus X"),
+draft_email_request (asking to draft or write up an email about
+something just discussed or agreed — phrases like "draft an email about
+X", "write up an email on X", "I need to draft an email on this", "get
+an email out on this". This frequently shows up in the SAME message as
+rate/agreement details right after a call — e.g. "we're good to go on
+the $40.50 rate, need to draft up an email" — when a message both states
+agreed terms AND explicitly asks for an email to be drafted, classify it
+as draft_email_request, not rate_request: drafting the email is the
+actual action being requested, and the agreed terms are just context for
+that email), general_note (the fallback — use this when a capture
+doesn't clearly fit any of the other kinds and isn't a substantive
+customer-relationship discussion: personal reminders, ideas, industry
+trivia, things worth remembering that aren't a task, an issue, a rate
+request, a brief request, a focus declaration, a draft email request, or
+a customer commitment).
 
 account_kind must be exactly one of: plant (a physical/operational
 location — spills, breakdowns, roll-off failures, equipment, gate
 delays, DOT issues) or customer (a business relationship — meetings,
 rate negotiations, scope discussions, follow-ups, or anything discussed
 with a named contact person rather than about a physical site).
-rate_request captures are always customer. general_note and
-brief_request can be about either kind, or about no account at all.
+rate_request captures are always customer. general_note, brief_request,
+and draft_email_request can be about either kind, or about no account at
+all.
 
 account_name_guess should be the company/plant/customer name this
 refers to (e.g. "RMR", "DKPI", "Midwest Recycling") — a company name

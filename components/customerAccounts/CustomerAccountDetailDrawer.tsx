@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Drawer } from "@/components/shell/Drawer";
 import { RateCalculatorTab } from "@/components/rateCalculator/RateCalculatorTab";
 import { CallPrepsTab } from "@/components/callPreps/CallPrepsTab";
+import { EmailDraftsTab } from "@/components/emailDrafts/EmailDraftsTab";
 
 interface CustomerAccountDetail {
   account: {
@@ -42,7 +43,7 @@ export function CustomerAccountDetailDrawer({
   const [error, setError] = useState<string | null>(null);
   const [savingTopicId, setSavingTopicId] = useState<string | null>(null);
   const [deletingTopicId, setDeletingTopicId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "calculator" | "callPreps">("overview");
+  const [tab, setTab] = useState<"overview" | "calculator" | "callPreps" | "drafts">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +122,7 @@ export function CustomerAccountDetailDrawer({
       {detail && (
         <div className="space-y-6">
           <div className="flex gap-1 text-xs">
-            {(["overview", "calculator", "callPreps"] as const).map((option) => (
+            {(["overview", "calculator", "callPreps", "drafts"] as const).map((option) => (
               <button
                 key={option}
                 type="button"
@@ -130,7 +131,7 @@ export function CustomerAccountDetailDrawer({
                   tab === option ? "bg-ink-2 text-ink-4" : "text-ink-3 hover:text-ink-4"
                 }`}
               >
-                {option === "callPreps" ? "Call Preps" : option}
+                {option === "callPreps" ? "Call Preps" : option === "drafts" ? "Drafts" : option}
               </button>
             ))}
           </div>
@@ -138,6 +139,8 @@ export function CustomerAccountDetailDrawer({
           {tab === "calculator" && <RateCalculatorTab accountId={accountId} />}
 
           {tab === "callPreps" && <CallPrepsTab accountId={accountId} />}
+
+          {tab === "drafts" && <EmailDraftsTab accountId={accountId} />}
 
           {tab === "overview" && (
             <>

@@ -9,6 +9,7 @@ import { handleRateRequest } from "@/lib/router/handleRateRequest";
 import { handleBriefRequest } from "@/lib/router/handleBriefRequest";
 import { detectCallPrep } from "@/lib/router/detectCallPrep";
 import { handleCallPrep } from "@/lib/router/handleCallPrep";
+import { handleDraftEmailRequest } from "@/lib/router/handleDraftEmailRequest";
 import { setFocus } from "@/lib/userFocus/queries";
 import { transcribeVoice } from "@/lib/transcription/transcribeVoice";
 import { downloadVoice, sendMessage, sendLongMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
@@ -164,6 +165,7 @@ async function handleMessage(message: TelegramMessage) {
   let rateReplyText: string | null = null;
   let briefReplyText: string | null = null;
   let focusReplyText: string | null = null;
+  let draftEmailReplyText: string | null = null;
 
   if (classification.kind === "rate_request" && account && account.kind === "customer") {
     const rateResult = await handleRateRequest(classification, account, userId);
@@ -183,6 +185,10 @@ async function handleMessage(message: TelegramMessage) {
     const focusRow = await setFocus(userId, focusText);
     route = { routedTo: "user_focus", routedId: focusRow.id };
     focusReplyText = `Focus set: ${focusText}`;
+  } else if (classification.kind === "draft_email_request") {
+    const draftResult = await handleDraftEmailRequest(text, account, userId);
+    route = { routedTo: draftResult.emailDraftId ? "email_drafts" : null, routedId: draftResult.emailDraftId };
+    draftEmailReplyText = draftResult.replyText;
   } else {
     route = await routeCapture(classification, account, text, userId);
   }
@@ -210,6 +216,11 @@ async function handleMessage(message: TelegramMessage) {
 
   if (classification.kind === "set_focus") {
     await sendMessage(chatId, focusReplyText ?? "Couldn't set that focus.");
+    return;
+  }
+
+  if (classification.kind === "draft_email_request") {
+    await sendLongMessage(chatId, draftEmailReplyText ?? "Couldn't generate that email draft.");
     return;
   }
 

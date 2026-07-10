@@ -173,6 +173,16 @@ type CallPrepsInsert = {
   created_at?: string;
 }
 
+type EmailDraftsInsert = {
+  id?: string;
+  user_id: string;
+  account_id?: string | null;
+  raw_input: string;
+  subject_line: string;
+  generated_body: string;
+  created_at?: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -409,6 +419,20 @@ export interface Database {
         };
         Insert: CallPrepsInsert;
         Update: Partial<CallPrepsInsert>;
+        Relationships: [];
+      };
+      email_drafts: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string | null;
+          raw_input: string;
+          subject_line: string;
+          generated_body: string;
+          created_at: string;
+        };
+        Insert: EmailDraftsInsert;
+        Update: Partial<EmailDraftsInsert>;
         Relationships: [];
       };
     };

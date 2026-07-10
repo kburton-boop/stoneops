@@ -76,14 +76,18 @@ export async function resolveAccountAndContacts(
   classification: CaptureClassification,
   userId: string,
 ): Promise<AccountResolution> {
-  // general_note, brief_request, and set_focus are read-only with respect
-  // to account data: a passing mention in a note, a status question, or a
-  // personal focus declaration shouldn't silently create a contact or a
-  // draft customer account the way an active business interaction would.
+  // general_note, brief_request, set_focus, and draft_email_request are
+  // read-only with respect to account data: a passing mention in a note, a
+  // status question, a personal focus declaration, or a request to draft a
+  // confirmation email shouldn't silently create a contact or a draft
+  // customer account the way an active business interaction would — a
+  // draft_email_request with an unresolved account should prompt for
+  // clarification (see handleDraftEmailRequest), not invent the account.
   const readOnly =
     classification.kind === "general_note" ||
     classification.kind === "brief_request" ||
-    classification.kind === "set_focus";
+    classification.kind === "set_focus" ||
+    classification.kind === "draft_email_request";
 
   const primaryGuess = classification.account_name_guess ?? classification.contact_name_guess;
   const { match, ambiguous } = await matchAccountDetailed(primaryGuess, userId);

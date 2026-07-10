@@ -11,6 +11,7 @@ export interface RouteResult {
     | "general_notes"
     | "brief_request"
     | "user_focus"
+    | "email_drafts"
     | null;
   routedId: string | null;
 }
