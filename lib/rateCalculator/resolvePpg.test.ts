@@ -13,7 +13,11 @@ test("resolvePpg prefers a spoken override over everything else", () => {
   const resolution = resolvePpg(4.6, FRESH_PRICE, 3.5);
   assert.equal(resolution.ppg, 4.6);
   assert.equal(resolution.source, "override");
-  assert.equal(resolution.eiaInfo, null);
+});
+
+test("resolvePpg still carries the live EIA price as eiaInfo even when an override wins", () => {
+  const resolution = resolvePpg(4.6, FRESH_PRICE, 3.5);
+  assert.equal(resolution.eiaInfo?.ppg, 4.583);
 });
 
 test("resolvePpg uses the live EIA price when no override is spoken", () => {
@@ -34,31 +38,42 @@ test("resolvePpg falls back to the caller's constant when no EIA price exists at
   const resolution = resolvePpg(null, null, 3.5);
   assert.equal(resolution.ppg, 3.5);
   assert.equal(resolution.source, "fallback");
+  assert.equal(resolution.eiaInfo, null);
 });
 
-test("formatPpgLine returns null for an override (already shown elsewhere in the reply)", () => {
+test("formatPpgLine never goes silent on an override — shows it plus what EIA had on file", () => {
   const resolution = resolvePpg(4.6, FRESH_PRICE, 3.5);
-  assert.equal(formatPpgLine(resolution, "account default"), null);
+  const line = formatPpgLine(resolution, "account default");
+  assert.ok(line.includes("$4.600"));
+  assert.ok(line.includes("override"));
+  assert.ok(line.includes("$4.583"), "should show the live EIA price for comparison, not go silent on it");
+});
+
+test("formatPpgLine shows just the override when no live price was ever fetched", () => {
+  const resolution = resolvePpg(4.6, null, 3.5);
+  const line = formatPpgLine(resolution, "account default");
+  assert.ok(line.includes("$4.600"));
+  assert.ok(!line.includes("EIA PADD2 was"));
 });
 
 test("formatPpgLine names the source and date for a live EIA price, with no warning when fresh", () => {
   const resolution = resolvePpg(null, FRESH_PRICE, 3.5);
   const line = formatPpgLine(resolution, "account default");
-  assert.ok(line?.includes("$4.583"));
-  assert.ok(line?.includes("EIA PADD2"));
-  assert.ok(!line?.includes("⚠"));
+  assert.ok(line.includes("$4.583"));
+  assert.ok(line.includes("EIA PADD2"));
+  assert.ok(!line.includes("⚠"));
 });
 
 test("formatPpgLine warns when the EIA price is stale", () => {
   const resolution = resolvePpg(null, STALE_PRICE, 3.5);
   const line = formatPpgLine(resolution, "account default");
-  assert.ok(line?.includes("⚠"));
+  assert.ok(line.includes("⚠"));
 });
 
 test("formatPpgLine flags the fallback case as having no live price on file", () => {
   const resolution = resolvePpg(null, null, 3.5);
   const line = formatPpgLine(resolution, "account default");
-  assert.ok(line?.includes("$3.500"));
-  assert.ok(line?.includes("account default"));
-  assert.ok(line?.includes("no live EIA price"));
+  assert.ok(line.includes("$3.500"));
+  assert.ok(line.includes("account default"));
+  assert.ok(line.includes("no live EIA price"));
 });

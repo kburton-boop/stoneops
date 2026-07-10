@@ -168,7 +168,12 @@ export function RateCalculatorTab({ accountId }: { accountId: string }) {
               time_add_hours: String(defaults.time_add_hours),
               avg_speed_mph: String(defaults.avg_speed_mph),
               mpg: String(defaults.mpg),
-              ppg: String(defaults.ppg),
+              // Deliberately NOT pre-filled from defaults.ppg — leaving it
+              // blank lets the live EIA price take over as the effective
+              // value (same override > live price > saved default
+              // priority as the voice rate_request flow), rather than
+              // silently starting every fresh calculation on a fuel price
+              // that may be well out of date.
               fsc_percent: defaults.fsc_percent != null ? String(defaults.fsc_percent) : prev.fsc_percent,
               baseline_price: defaults.baseline_price != null ? String(defaults.baseline_price) : prev.baseline_price,
             }));

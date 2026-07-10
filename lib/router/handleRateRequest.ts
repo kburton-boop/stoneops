@@ -189,8 +189,7 @@ async function calculateFromDefaults(
   if (otherOverrideNotes.length > 0) {
     replyLines.push(`Other overrides: ${otherOverrideNotes.join(", ")}`);
   }
-  const ppgLine = formatPpgLine(ppgResolution, `${account.name} saved default`);
-  if (ppgLine) replyLines.push(ppgLine);
+  replyLines.push(formatPpgLine(ppgResolution, `${account.name} saved default`));
 
   return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
 }
@@ -285,8 +284,7 @@ async function calculateStandalone(
   if (assumed.length > 0) {
     replyLines.push(`Assumed (not spoken): ${assumed.join(", ")}`);
   }
-  const ppgLine = formatPpgLine(ppgResolution, "fixed estimate");
-  if (ppgLine) replyLines.push(ppgLine);
+  replyLines.push(formatPpgLine(ppgResolution, "fixed estimate"));
 
   return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
 }

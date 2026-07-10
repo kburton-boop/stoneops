@@ -11,7 +11,11 @@ export interface CurrentFuelPriceLike {
 export interface PpgResolution {
   ppg: number;
   source: PpgSource;
-  eiaInfo: { periodDate: string; isStale: boolean } | null;
+  // Populated whenever a live price was available, even when it wasn't
+  // the one actually used (source === "override") — so the reply can
+  // still show "here's what EIA had on file" for comparison rather than
+  // going silent on it.
+  eiaInfo: { ppg: number; periodDate: string; isStale: boolean } | null;
 }
 
 // Priority: a spoken/typed override always wins; otherwise the live EIA
@@ -24,18 +28,19 @@ export function resolvePpg(
   currentFuelPrice: CurrentFuelPriceLike | null,
   fallback: number,
 ): PpgResolution {
-  if (overridePpg != null) {
-    return { ppg: overridePpg, source: "override", eiaInfo: null };
-  }
-  if (currentFuelPrice) {
-    return {
-      ppg: currentFuelPrice.ppg,
-      source: "eia",
-      eiaInfo: {
+  const eiaInfo = currentFuelPrice
+    ? {
+        ppg: currentFuelPrice.ppg,
         periodDate: currentFuelPrice.period_date,
         isStale: isStaleFetch(currentFuelPrice.fetched_at),
-      },
-    };
+      }
+    : null;
+
+  if (overridePpg != null) {
+    return { ppg: overridePpg, source: "override", eiaInfo };
+  }
+  if (currentFuelPrice) {
+    return { ppg: currentFuelPrice.ppg, source: "eia", eiaInfo };
   }
   return { ppg: fallback, source: "fallback", eiaInfo: null };
 }
@@ -50,11 +55,16 @@ export function formatShortDate(isoDate: string): string {
   return date.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" });
 }
 
-// Returns null when there's nothing worth surfacing (an explicit spoken
-// override already shows up in the normal override-echo lines and doesn't
-// need a second mention here).
-export function formatPpgLine(resolution: PpgResolution, fallbackLabel: string): string | null {
-  if (resolution.source === "override") return null;
+// PPG is never a silent input: every path returns a line, including the
+// override case (shown for comparison against what EIA had on file,
+// rather than assuming that's obvious from the rest of the reply).
+export function formatPpgLine(resolution: PpgResolution, fallbackLabel: string): string {
+  if (resolution.source === "override") {
+    const comparison = resolution.eiaInfo
+      ? ` (EIA PADD2 was $${resolution.eiaInfo.ppg.toFixed(3)}, updated ${formatShortDate(resolution.eiaInfo.periodDate)})`
+      : "";
+    return `PPG: $${resolution.ppg.toFixed(3)} override${comparison}`;
+  }
 
   if (resolution.source === "eia" && resolution.eiaInfo) {
     const dateLabel = formatShortDate(resolution.eiaInfo.periodDate);
