@@ -8,6 +8,7 @@ export type FeedCategory =
   | "general_notes"
   | "brief_request"
   | "needs_review"
+  | "possible_new_capability"
   | "other";
 
 export interface ActivityFeedEntry {
@@ -19,6 +20,7 @@ export interface ActivityFeedEntry {
   account_name: string | null;
   account_kind: "plant" | "customer" | null;
   commitment_owner: "me" | "them" | null;
+  unrecognized_intent_guess: string | null;
   category: FeedCategory;
   categories: FeedCategory[];
 }
@@ -31,13 +33,15 @@ const ROUTED_TO_CATEGORY: Record<string, FeedCategory> = {
   brief_request: "brief_request",
 };
 
-// Priority order for the single badge shown per entry — needs_review and
-// new_customers are cross-cutting flags that can co-occur with a base
-// routing category, so they take precedence in the display badge even
-// though the entry still matches its base category for filtering.
+// Priority order for the single badge shown per entry — needs_review,
+// new_customers, and possible_new_capability are cross-cutting flags
+// that can co-occur with a base routing category, so they take
+// precedence in the display badge even though the entry still matches
+// its base category for filtering.
 const BADGE_PRIORITY: FeedCategory[] = [
   "needs_review",
   "new_customers",
+  "possible_new_capability",
   "corrective_actions",
   "customer_topics",
   "rate_calculations",
@@ -52,6 +56,7 @@ interface StoredClassification {
   account_name_guess?: string | null;
   matched_account_id?: string | null;
   commitment_owner?: "me" | "them" | null;
+  unrecognized_intent_guess?: string | null;
 }
 
 export async function getActivityFeed(
@@ -121,6 +126,10 @@ export async function getActivityFeed(
         categories.push("needs_review");
       }
 
+      if (typeof classification.unrecognized_intent_guess === "string" && classification.unrecognized_intent_guess) {
+        categories.push("possible_new_capability");
+      }
+
       if (categories.length === 0) categories.push("other");
     }
 
@@ -135,6 +144,7 @@ export async function getActivityFeed(
       account_name: account?.name ?? null,
       account_kind: account?.kind ?? null,
       commitment_owner: classification?.commitment_owner ?? null,
+      unrecognized_intent_guess: classification?.unrecognized_intent_guess ?? null,
       category,
       categories,
     };

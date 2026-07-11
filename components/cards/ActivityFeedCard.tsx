@@ -14,6 +14,7 @@ const FILTERS: { key: FeedCategory | "all"; label: string }[] = [
   { key: "general_notes", label: "Notes" },
   { key: "brief_request", label: "Meeting Briefs" },
   { key: "needs_review", label: "Needs Review" },
+  { key: "possible_new_capability", label: "New Capability?" },
 ];
 
 const BADGE_LABEL: Record<FeedCategory, string> = {
@@ -24,6 +25,7 @@ const BADGE_LABEL: Record<FeedCategory, string> = {
   general_notes: "Note",
   brief_request: "Meeting Brief",
   needs_review: "Needs Review",
+  possible_new_capability: "New Capability?",
   other: "Other",
 };
 
@@ -35,6 +37,7 @@ const BADGE_STYLE: Record<FeedCategory, string> = {
   general_notes: "bg-ink-2 text-ink-3",
   brief_request: "bg-ink-2 text-ink-3",
   needs_review: "bg-hot/20 text-hot",
+  possible_new_capability: "bg-accent/20 text-accent",
   other: "bg-ink-2 text-ink-3",
 };
 
@@ -181,6 +184,9 @@ export function ActivityFeedCard() {
                       <p className="truncate text-xs text-ink-3">
                         {formatTimestamp(entry.created_at)} · {entry.account_name ?? "unmatched"}
                       </p>
+                      {entry.unrecognized_intent_guess && (
+                        <p className="mt-0.5 text-xs italic text-accent">💡 {entry.unrecognized_intent_guess}</p>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       {entry.commitment_owner && entry.categories.includes("customer_topics") && (

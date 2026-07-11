@@ -40,6 +40,7 @@ export async function routeCapture(
         text: rawText,
         tags: classification.tags,
         related_account_id: account?.id ?? null,
+        unrecognized_intent_guess: classification.unrecognized_intent_guess,
       })
       .select("id")
       .single();

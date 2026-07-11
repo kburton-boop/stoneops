@@ -40,6 +40,7 @@ type GeneralNotesInsert = {
   text: string;
   tags?: string[];
   related_account_id?: string | null;
+  unrecognized_intent_guess?: string | null;
   created_at?: string;
 }
 
@@ -249,6 +250,7 @@ export interface Database {
           text: string;
           tags: string[];
           related_account_id: string | null;
+          unrecognized_intent_guess: string | null;
           created_at: string;
         };
         Insert: GeneralNotesInsert;

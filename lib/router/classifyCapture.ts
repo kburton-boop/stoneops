@@ -55,6 +55,11 @@ export interface CaptureClassification {
   commitment_owner: CommitmentOwner | null;
   // set_focus-only field — null for every other kind.
   focus_text: string | null;
+  // general_note-only field — null for every other kind, and null for
+  // most general_notes too (see system prompt: only set when the
+  // message reads as a genuine actionable request for something the
+  // system doesn't support yet).
+  unrecognized_intent_guess: string | null;
 }
 
 const KIND_VALUES: CaptureKind[] = [
@@ -157,6 +162,22 @@ For general_note captures, tags may carry a short theme or two if one is
 obvious (e.g. "SpaceX", "shop plan", "personal") but a blank tags array
 is completely fine — don't strain to invent a tag.
 
+For general_note captures only, also consider unrecognized_intent_guess:
+a one-sentence guess at what the coordinator is actually trying to get
+done, but ONLY when the message genuinely reads as an actionable request
+for something the system doesn't have a way to handle yet — e.g. "can
+you look up unit 22541's inspection date" or "how many hours has driver
+X logged this week" (asking the system to look up or compute something
+specific it doesn't track). Phrase it as a guess, e.g. "Sounds like a
+request to check on a driver's DOT inspection status." or "Sounds like a
+request to log mileage for a specific unit." Leave it empty for the vast
+majority of general_notes — personal reminders ("check on the shop plan
+sometime"), ideas, industry trivia, or anything that's just information
+being logged rather than a request for the system to do something.
+Being conservative here matters more than being thorough: when in doubt,
+leave it empty rather than flagging an ordinary note as a disguised
+feature request.
+
 For set_focus captures only, also extract focus_text: the focus
 statement itself with the trigger phrase stripped (e.g. "today my focus
 is chasing the NTP-G FSC gap before Friday" -> focus_text "Chasing the
@@ -226,6 +247,11 @@ const CLASSIFY_TOOL: Anthropic.Tool = {
       focus_text: {
         type: "string",
         description: "set_focus only: the focus statement with the trigger phrase stripped, or empty string.",
+      },
+      unrecognized_intent_guess: {
+        type: "string",
+        description:
+          "general_note only: a one-sentence guess at the actionable intent behind the message, ONLY when it genuinely reads as a request for something unsupported — empty string otherwise (the common case).",
       },
     },
     required: ["kind", "account_kind", "urgency", "severity", "tags", "summary"],
@@ -298,6 +324,7 @@ function normalize(input: Record<string, unknown>): CaptureClassification {
     overrides: normalizeOverrides(input.overrides),
     commitment_owner: commitmentOwner,
     focus_text: normalizeString(input.focus_text),
+    unrecognized_intent_guess: normalizeString(input.unrecognized_intent_guess),
   };
 }
 
