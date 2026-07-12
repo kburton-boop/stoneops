@@ -29,7 +29,7 @@ export async function getCorrectiveActions(
 
   if (error) throw error;
 
-  const rows = (data ?? []) as (CorrectiveActionRow & { accounts: { name: string } | null })[];
+  const rows = (data ?? []) as unknown as (CorrectiveActionRow & { accounts: { name: string } | null })[];
 
   return rows
     .map(({ accounts, ...ca }) => ({ ...ca, account_name: accounts?.name ?? null }))

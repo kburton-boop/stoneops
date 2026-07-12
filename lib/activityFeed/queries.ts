@@ -19,6 +19,7 @@ export interface ActivityFeedEntry {
   account_id: string | null;
   account_name: string | null;
   account_kind: "plant" | "customer" | null;
+  deleted_account_name: string | null;
   commitment_owner: "me" | "them" | null;
   unrecognized_intent_guess: string | null;
   category: FeedCategory;
@@ -57,6 +58,7 @@ interface StoredClassification {
   matched_account_id?: string | null;
   commitment_owner?: "me" | "them" | null;
   unrecognized_intent_guess?: string | null;
+  deleted_account_name?: string | null;
 }
 
 export async function getActivityFeed(
@@ -143,6 +145,7 @@ export async function getActivityFeed(
       account_id: accountId,
       account_name: account?.name ?? null,
       account_kind: account?.kind ?? null,
+      deleted_account_name: classification?.deleted_account_name ?? null,
       commitment_owner: classification?.commitment_owner ?? null,
       unrecognized_intent_guess: classification?.unrecognized_intent_guess ?? null,
       category,

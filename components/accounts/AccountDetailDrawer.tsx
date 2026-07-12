@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Drawer } from "@/components/shell/Drawer";
+import { DeleteAccountDialog } from "@/components/shell/DeleteAccountDialog";
 import { CallPrepsTab } from "@/components/callPreps/CallPrepsTab";
 import { EmailDraftsTab } from "@/components/emailDrafts/EmailDraftsTab";
 
@@ -56,6 +57,7 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
   const [error, setError] = useState<string | null>(null);
   const [deletingActionId, setDeletingActionId] = useState<string | null>(null);
   const [tab, setTab] = useState<"overview" | "callPreps" | "drafts">("overview");
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,7 +254,25 @@ export function AccountDetailDrawer({ accountId, onClose }: { accountId: string;
           </div>
           </>
           )}
+
+          <div className="border-t border-ink-2 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowDeleteAccount(true)}
+              className="min-h-11 w-full rounded border border-hot/40 px-3 text-sm text-hot hover:bg-hot/10"
+            >
+              Delete Account
+            </button>
+          </div>
         </div>
+      )}
+
+      {showDeleteAccount && detail && (
+        <DeleteAccountDialog
+          accountId={accountId}
+          accountName={detail.account.name}
+          onClose={() => setShowDeleteAccount(false)}
+        />
       )}
     </Drawer>
   );

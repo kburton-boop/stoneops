@@ -182,7 +182,9 @@ export function ActivityFeedCard() {
                     <div className="min-w-0">
                       <p className="truncate text-ink-4">{entry.summary}</p>
                       <p className="truncate text-xs text-ink-3">
-                        {formatTimestamp(entry.created_at)} · {entry.account_name ?? "unmatched"}
+                        {formatTimestamp(entry.created_at)} ·{" "}
+                        {entry.account_name ??
+                          (entry.deleted_account_name ? `Account deleted: ${entry.deleted_account_name}` : "unmatched")}
                       </p>
                       {entry.unrecognized_intent_guess && (
                         <p className="mt-0.5 text-xs italic text-accent">💡 {entry.unrecognized_intent_guess}</p>

@@ -152,3 +152,111 @@ export async function getAccountDetail(userId: string, accountId: string): Promi
     topics: topics ?? [],
   };
 }
+
+export interface AccountDeletionImpact {
+  accountName: string;
+  accountKind: AccountRow["kind"];
+  status: AccountRow["status"];
+  correctiveActions: number;
+  customerTopics: number;
+  rateCalculations: number;
+  contacts: number;
+  rateDefaults: number;
+  loads: number;
+  laneFinancials: number;
+  tasks: number;
+}
+
+// Every count shown here reflects a table the cascade delete (see
+// migration 0017 / deleteAccountCascade below) actually removes rows
+// from — this is what "real thought given to what happens" means in
+// practice: the confirmation dialog can't tell the truth about impact
+// unless it's checking the same tables the delete touches.
+export async function getAccountDeletionImpact(
+  userId: string,
+  accountId: string,
+): Promise<AccountDeletionImpact | null> {
+  const supabase = getServiceRoleClient();
+
+  const { data: account, error: accountError } = await supabase
+    .from("accounts")
+    .select("name, kind, status")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (accountError) throw accountError;
+  if (!account) return null;
+
+  const [
+    { data: correctiveActions, error: caError },
+    { data: customerTopics, error: topicsError },
+    { data: rateCalculations, error: rcError },
+    { data: contacts, error: contactsError },
+    { data: rateDefaults, error: rdError },
+    { data: loads, error: loadsError },
+    { data: laneFinancials, error: lfError },
+    { data: tasks, error: tasksError },
+  ] = await Promise.all([
+    supabase.from("corrective_actions").select("id").eq("user_id", userId).eq("account_id", accountId),
+    supabase.from("customer_topics").select("id").eq("user_id", userId).eq("account_id", accountId),
+    supabase.from("rate_calculations").select("id").eq("user_id", userId).eq("account_id", accountId),
+    supabase.from("customer_contacts").select("id").eq("account_id", accountId),
+    supabase.from("rate_defaults").select("id").eq("account_id", accountId),
+    supabase.from("loads").select("id").eq("user_id", userId).eq("account_id", accountId),
+    supabase.from("lane_financials").select("id").eq("user_id", userId).eq("account_id", accountId),
+    supabase.from("tasks").select("id").eq("user_id", userId).eq("account_id", accountId),
+  ]);
+
+  if (caError) throw caError;
+  if (topicsError) throw topicsError;
+  if (rcError) throw rcError;
+  if (contactsError) throw contactsError;
+  if (rdError) throw rdError;
+  if (loadsError) throw loadsError;
+  if (lfError) throw lfError;
+  if (tasksError) throw tasksError;
+
+  return {
+    accountName: account.name,
+    accountKind: account.kind,
+    status: account.status,
+    correctiveActions: correctiveActions?.length ?? 0,
+    customerTopics: customerTopics?.length ?? 0,
+    rateCalculations: rateCalculations?.length ?? 0,
+    contacts: contacts?.length ?? 0,
+    rateDefaults: rateDefaults?.length ?? 0,
+    loads: loads?.length ?? 0,
+    laneFinancials: laneFinancials?.length ?? 0,
+    tasks: tasks?.length ?? 0,
+  };
+}
+
+// A pending_confirmation account is a draft another capture may still be
+// actively pointing at (see the "cc"/"rc" Telegram callback flow) —
+// deleting it out from under an in-progress classification would be
+// confusing and could orphan that flow. The API route re-checks this
+// itself rather than trusting the client, since it's the one thing here
+// that isn't just "confirm and go."
+export async function deleteAccountCascade(userId: string, accountId: string): Promise<void> {
+  const supabase = getServiceRoleClient();
+
+  const { data: account, error: accountError } = await supabase
+    .from("accounts")
+    .select("status")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (accountError) throw accountError;
+  if (!account) throw new Error("Account not found");
+  if (account.status === "pending_confirmation") {
+    throw new Error("PENDING_CONFIRMATION");
+  }
+
+  const { error } = await supabase.rpc("delete_account_cascade", {
+    target_account_id: accountId,
+    target_user_id: userId,
+  });
+  if (error) throw error;
+}

@@ -459,6 +459,11 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      delete_account_cascade: {
+        Args: { target_account_id: string; target_user_id: string };
+        Returns: undefined;
+      };
+    };
   };
 }
