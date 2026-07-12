@@ -35,6 +35,29 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext<"/api/accounts
         { status: 409 },
       );
     }
-    throw err;
+
+    // Any other failure (RPC missing because the migration hasn't been
+    // applied yet, an unexpected constraint violation, etc.) still needs to
+    // come back as JSON — an uncaught throw here produces Next's HTML error
+    // page, which breaks the client's res.json() and surfaces only a generic
+    // "Delete failed" with no way to diagnose what actually went wrong.
+    console.error(`DELETE /api/accounts/${id} failed:`, err);
+    return NextResponse.json({ error: `Delete failed: ${describeError(err)}` }, { status: 500 });
   }
+}
+
+// Supabase's PostgrestError puts the actionable fix in `hint` far more
+// often than in `message` (e.g. permission-denied errors return the exact
+// GRANT statement in `hint`), so a bare `.message` frequently leaves out
+// the one detail that would let you fix the problem without digging
+// through server logs.
+function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    const hint = (err as Error & { hint?: string }).hint;
+    return hint ? `${err.message} (hint: ${hint})` : err.message;
+  }
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return "Unknown error";
 }

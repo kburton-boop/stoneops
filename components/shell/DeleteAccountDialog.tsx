@@ -35,14 +35,19 @@ export function DeleteAccountDialog({
     let cancelled = false;
 
     fetch(`/api/accounts/${accountId}/deletion-impact`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to load deletion impact");
-        return res.json();
+      .then(async (res) => {
+        const text = await res.text();
+        if (!res.ok) {
+          console.error(`GET /api/accounts/${accountId}/deletion-impact failed (${res.status}):`, text);
+          throw new Error("Failed to load deletion impact");
+        }
+        return JSON.parse(text);
       })
       .then((data: AccountDeletionImpact) => {
         if (!cancelled) setImpact(data);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("Couldn't check what's tied to this account:", err);
         if (!cancelled) setError("Couldn't check what's tied to this account.");
       })
       .finally(() => {
@@ -59,12 +64,23 @@ export function DeleteAccountDialog({
     setError(null);
     try {
       const res = await fetch(`/api/accounts/${accountId}`, { method: "DELETE" });
+      const text = await res.text();
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.error ?? "Delete failed");
+        console.error(`DELETE /api/accounts/${accountId} failed (${res.status}):`, text);
+        let message = "Delete failed";
+        try {
+          const body = JSON.parse(text);
+          if (body?.error) message = body.error;
+        } catch {
+          // Response wasn't JSON (e.g. a framework error page) — the raw
+          // text is already logged above, so the console has the real
+          // reason even though the UI can only show a generic message.
+        }
+        throw new Error(message);
       }
       window.location.reload();
     } catch (err) {
+      console.error("Account delete failed:", err);
       setError(err instanceof Error ? err.message : "Couldn't delete this account.");
       setDeleting(false);
     }
