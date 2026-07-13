@@ -1,7 +1,7 @@
 import type { CaptureClassification, RateOverrideKey } from "./classifyCapture";
 import type { AccountMatch } from "./matchAccount";
 import { getRateDefaults, type RateDefaultsRow } from "@/lib/rateCalculator/rateDefaults";
-import { lookupDistance, looksLikeStateMismatch } from "@/lib/rateCalculator/distance";
+import { lookupDistance, looksLikeStateMismatch, type LocationAmbiguity } from "@/lib/rateCalculator/distance";
 import { calculateTypeA, calculateTypeB } from "@/lib/rateCalculator/calculate";
 import { saveCalculation, updateCalculation, type RateCalculationRow } from "@/lib/rateCalculator/queries";
 import { getCurrentFuelPrice, type FuelPriceRow } from "@/lib/fuelPrice/queries";
@@ -64,10 +64,22 @@ interface ResolvedMiles {
   // flagged ones.
   laneLabel: string;
   // Set when the geocoded location's state doesn't match the state
-  // actually spoken — the free OSRM/Nominatim fallback has no
-  // disambiguation, so "Spring Grove" or "Ghent" can silently resolve to
-  // a same-named place in the wrong state entirely.
+  // actually spoken, OR a Nominatim ambiguity check found another real
+  // place with the same name 20+ miles away (checkAmbiguity level
+  // "hard") — either way, a strong enough signal that the calculation
+  // shouldn't run at all until the location is confirmed.
   geocodeWarning: string | null;
+  // Set when the ambiguity check found a same-name candidate nearby
+  // (5-20 mi — checkAmbiguity level "soft") — not strong enough to block
+  // on, but worth a standing habit-forming reminder in an otherwise
+  // successful reply.
+  confidenceNote: string | null;
+}
+
+function describeAmbiguity(label: string, ambiguity: LocationAmbiguity): string | null {
+  if (ambiguity.level === "none" || ambiguity.candidateLabels.length < 2) return null;
+  const others = ambiguity.candidateLabels.filter((c) => c !== label).slice(0, 2);
+  return others.length > 0 ? `"${label}" vs. also-matching ${others.map((o) => `"${o}"`).join(" / ")}` : null;
 }
 
 async function resolveOneWayMiles(
@@ -75,7 +87,7 @@ async function resolveOneWayMiles(
 ): Promise<ResolvedMiles | { error: string } | { missing: true }> {
   if (classification.one_way_miles != null) {
     const miles = classification.one_way_miles;
-    return { miles, laneLabel: `${Math.round(miles * 10) / 10} mi`, geocodeWarning: null };
+    return { miles, laneLabel: `${Math.round(miles * 10) / 10} mi`, geocodeWarning: null, confidenceNote: null };
   }
   if (classification.origin_city && classification.destination_city) {
     const origin = classification.origin_city;
@@ -85,14 +97,38 @@ async function resolveOneWayMiles(
       const roundedMiles = Math.round(distance.miles * 10) / 10;
       const laneLabel = `${distance.originLabel} to ${distance.destinationLabel} (${roundedMiles} mi)`;
 
-      const originMismatch = looksLikeStateMismatch(origin, distance.originLabel);
-      const destinationMismatch = looksLikeStateMismatch(destination, distance.destinationLabel);
-      const geocodeWarning =
-        originMismatch || destinationMismatch
-          ? `⚠️ Asked for "${origin} to ${destination}" but the mileage lookup resolved to "${distance.originLabel} to ${distance.destinationLabel}" — looks like it may have matched the wrong place. Double-check this lane before quoting it.`
+      const originStateMismatch = looksLikeStateMismatch(origin, distance.originLabel);
+      const destinationStateMismatch = looksLikeStateMismatch(destination, distance.destinationLabel);
+      const originHardAmbiguous = distance.originAmbiguity.level === "hard";
+      const destinationHardAmbiguous = distance.destinationAmbiguity.level === "hard";
+
+      let geocodeWarning: string | null = null;
+      if (originStateMismatch || destinationStateMismatch) {
+        geocodeWarning = `⚠️ Asked for "${origin} to ${destination}" but the mileage lookup resolved to "${distance.originLabel} to ${distance.destinationLabel}" — looks like it may have matched the wrong place. Double-check this lane before quoting it.`;
+      } else if (originHardAmbiguous || destinationHardAmbiguous) {
+        // A real Google Distance Matrix query for "Spring Grove, OH" once
+        // confidently resolved 250+ miles from the intended place while
+        // staying inside the same state — a same-state check alone
+        // wouldn't have caught it, so this asks Nominatim independently
+        // (regardless of which provider computes the actual mileage)
+        // whether the name has other real, meaningfully distant matches.
+        const originNote = originHardAmbiguous ? describeAmbiguity(distance.originLabel, distance.originAmbiguity) : null;
+        const destinationNote = destinationHardAmbiguous
+          ? describeAmbiguity(distance.destinationLabel, distance.destinationAmbiguity)
+          : null;
+        const detail = [originNote, destinationNote].filter(Boolean).join("; ");
+        geocodeWarning = `⚠️ "${origin} to ${destination}" resolved to "${distance.originLabel} to ${distance.destinationLabel}" (${roundedMiles} mi), but that name also matches another real place far away${detail ? ` — ${detail}` : ""}. Too ambiguous to trust — reply with the miles directly, or a fuller location (e.g. a nearby larger city), to confirm.`;
+      }
+
+      // Soft note: a same-name place exists nearby (5-20 mi) but not far
+      // enough to block on — still worth teaching the habit that made the
+      // hard case avoidable in the first place.
+      const confidenceNote =
+        !geocodeWarning && (distance.originAmbiguity.level === "soft" || distance.destinationAmbiguity.level === "soft")
+          ? `💡 "${distance.originAmbiguity.level === "soft" ? origin : destination}" matched more than one nearby place — for sharper accuracy next time, include a nearby larger city (e.g. "${origin} near <city>") instead of just the town name.`
           : null;
 
-      return { miles: distance.miles, laneLabel, geocodeWarning };
+      return { miles: distance.miles, laneLabel, geocodeWarning, confidenceNote };
     } catch {
       return {
         error: `Couldn't look up mileage from ${origin} to ${destination} — try again or give me the miles directly.`,
@@ -243,6 +279,9 @@ async function calculateFromDefaults(
     replyLines.push(`Other overrides: ${otherOverrideNotes.join(", ")}`);
   }
   replyLines.push(formatPpgLine(ppgResolution, `${account.name} saved default`));
+  if (milesResult.confidenceNote) {
+    replyLines.push(milesResult.confidenceNote);
+  }
 
   return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
 }
@@ -336,7 +375,8 @@ async function calculateStandalone(
     outputs as unknown as Record<string, unknown>,
   );
 
-  const laneLabel = (milesResult as ResolvedMiles).laneLabel;
+  const resolvedMiles = milesResult as ResolvedMiles;
+  const laneLabel = resolvedMiles.laneLabel;
 
   const replyLines = [
     `Standalone quote (not linked to an account):`,
@@ -349,6 +389,9 @@ async function calculateStandalone(
     replyLines.push(`Assumed (not spoken): ${assumed.join(", ")}`);
   }
   replyLines.push(formatPpgLine(ppgResolution, "fixed estimate"));
+  if (resolvedMiles.confidenceNote) {
+    replyLines.push(resolvedMiles.confidenceNote);
+  }
 
   return { routedTo: "rate_calculations", routedId: calc.id, replyText: replyLines.join("\n") };
 }

@@ -1,5 +1,15 @@
 const METERS_PER_MILE = 1609.344;
 
+export type AmbiguityLevel = "none" | "soft" | "hard";
+
+export interface LocationAmbiguity {
+  level: AmbiguityLevel;
+  // Other real, meaningfully-distant places that also matched the same
+  // name — shown to the user so they can tell at a glance which one was
+  // actually meant, e.g. surfaced in a "did you mean" style prompt.
+  candidateLabels: string[];
+}
+
 export interface DistanceResult {
   miles: number;
   source: "google" | "osrm";
@@ -10,17 +20,34 @@ export interface DistanceResult {
   // looksLikeStateMismatch below.
   originLabel: string;
   destinationLabel: string;
+  originAmbiguity: LocationAmbiguity;
+  destinationAmbiguity: LocationAmbiguity;
 }
 
 export async function lookupDistance(origin: string, destination: string): Promise<DistanceResult> {
   const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (googleApiKey) {
-    return lookupViaGoogle(origin, destination, googleApiKey);
-  }
-  return lookupViaOsrm(origin, destination);
+  const [primary, originAmbiguity, destinationAmbiguity] = await Promise.all([
+    googleApiKey ? lookupViaGoogle(origin, destination, googleApiKey) : lookupViaOsrm(origin, destination),
+    // Run regardless of which provider computes the actual mileage — a
+    // paid, generally-more-reliable geocoder can still silently pick the
+    // wrong same-named place (confirmed against the real Google API: a
+    // "Spring Grove, OH" query resolved to a real but wrong Spring Grove
+    // 250+ miles from the intended one). Distance Matrix doesn't expose
+    // alternate candidates, but the free Nominatim search does when asked
+    // for more than one result, so it's used here purely as an
+    // independent ambiguity check, not as the mileage source.
+    checkAmbiguity(origin),
+    checkAmbiguity(destination),
+  ]);
+
+  return { ...primary, originAmbiguity, destinationAmbiguity };
 }
 
-async function lookupViaGoogle(origin: string, destination: string, apiKey: string): Promise<DistanceResult> {
+async function lookupViaGoogle(
+  origin: string,
+  destination: string,
+  apiKey: string,
+): Promise<Omit<DistanceResult, "originAmbiguity" | "destinationAmbiguity">> {
   const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
   url.searchParams.set("origins", origin);
   url.searchParams.set("destinations", destination);
@@ -51,11 +78,11 @@ interface GeocodeResult {
   label: string;
 }
 
-async function geocode(query: string): Promise<GeocodeResult> {
+async function geocodeCandidates(query: string, limit: number): Promise<GeocodeResult[]> {
   const url = new URL("https://nominatim.openstreetmap.org/search");
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
-  url.searchParams.set("limit", "1");
+  url.searchParams.set("limit", String(limit));
 
   const response = await fetch(url, {
     headers: { "User-Agent": "stoneops-rate-calculator/1.0 (single-user internal tool)" },
@@ -63,13 +90,19 @@ async function geocode(query: string): Promise<GeocodeResult> {
   if (!response.ok) throw new Error(`Geocoding request failed: ${response.status}`);
 
   const results = (await response.json()) as { lat: string; lon: string; display_name?: string }[];
-  if (results.length === 0) throw new Error(`Couldn't geocode "${query}"`);
-
-  const result = results[0];
-  return { lat: Number(result.lat), lon: Number(result.lon), label: result.display_name || query };
+  return results.map((r) => ({ lat: Number(r.lat), lon: Number(r.lon), label: r.display_name || query }));
 }
 
-async function lookupViaOsrm(origin: string, destination: string): Promise<DistanceResult> {
+async function geocode(query: string): Promise<GeocodeResult> {
+  const results = await geocodeCandidates(query, 1);
+  if (results.length === 0) throw new Error(`Couldn't geocode "${query}"`);
+  return results[0];
+}
+
+async function lookupViaOsrm(
+  origin: string,
+  destination: string,
+): Promise<Omit<DistanceResult, "originAmbiguity" | "destinationAmbiguity">> {
   const [originPoint, destinationPoint] = await Promise.all([geocode(origin), geocode(destination)]);
 
   const url = new URL(
@@ -94,6 +127,56 @@ async function lookupViaOsrm(origin: string, destination: string): Promise<Dista
   };
 }
 
+const EARTH_RADIUS_MILES = 3958.8;
+
+export function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return EARTH_RADIUS_MILES * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Below this, two candidates are treated as "the same place" (a city
+// point vs. its county seat, a rooftop match vs. a town-center match) —
+// not evidence of ambiguity.
+const SOFT_AMBIGUITY_MILES = 5;
+// Above this, two candidates are different enough that picking the wrong
+// one would materially wreck a mileage-based quote — matches the real
+// gap observed between the wrong and right "Spring Grove, OH" (~250+ mi).
+const HARD_AMBIGUITY_MILES = 20;
+
+// Independent of whichever provider computes the actual route: asks
+// Nominatim for several candidate matches on the same query text and
+// checks how far apart the top two are. Two real, meaningfully distant
+// places sharing a name is a direct, honest signal that a short location
+// name doesn't uniquely identify anywhere — far more reliable than
+// guessing from the resolved label's wording, which would also flag
+// perfectly ordinary "City, County, State" resolutions.
+export async function checkAmbiguity(query: string): Promise<LocationAmbiguity> {
+  try {
+    const candidates = await geocodeCandidates(query, 5);
+    if (candidates.length < 2) return { level: "none", candidateLabels: [] };
+
+    const [first, second] = candidates;
+    const milesApart = haversineMiles(first.lat, first.lon, second.lat, second.lon);
+
+    if (milesApart >= HARD_AMBIGUITY_MILES) {
+      return { level: "hard", candidateLabels: candidates.slice(0, 3).map((c) => c.label) };
+    }
+    if (milesApart >= SOFT_AMBIGUITY_MILES) {
+      return { level: "soft", candidateLabels: candidates.slice(0, 3).map((c) => c.label) };
+    }
+    return { level: "none", candidateLabels: [] };
+  } catch {
+    // Fail open — this is a supplementary safety check, not the primary
+    // lookup, and its own unavailability shouldn't block a calculation
+    // that would otherwise succeed.
+    return { level: "none", candidateLabels: [] };
+  }
+}
+
 const STATE_NAMES_BY_ABBREVIATION: Record<string, string> = {
   AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
   CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
@@ -114,6 +197,10 @@ const STATE_NAMES_BY_ABBREVIATION: Record<string, string> = {
 // state in the resolved label is a cheap, high-signal way to catch that —
 // far more reliable than guessing at a "plausible" mileage threshold, which
 // would be arbitrary and would miss lanes that are legitimately long.
+// Kept alongside checkAmbiguity (not replaced by it) as defense in depth:
+// this needs zero network calls and catches a wrong-state match even in
+// the rare case Nominatim's ranking doesn't surface the correct candidate
+// in its top results at all.
 export function looksLikeStateMismatch(statedLocation: string, resolvedLabel: string): boolean {
   const match = statedLocation.match(/,\s*([A-Za-z]{2})\b/);
   if (!match) return false;
