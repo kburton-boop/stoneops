@@ -1,7 +1,7 @@
 import type { CaptureClassification, RateOverrideKey } from "./classifyCapture";
 import type { AccountMatch } from "./matchAccount";
 import { getRateDefaults, type RateDefaultsRow } from "@/lib/rateCalculator/rateDefaults";
-import { lookupDistance } from "@/lib/rateCalculator/distance";
+import { lookupDistance, looksLikeStateMismatch } from "@/lib/rateCalculator/distance";
 import { calculateTypeA, calculateTypeB } from "@/lib/rateCalculator/calculate";
 import { saveCalculation } from "@/lib/rateCalculator/queries";
 import { getCurrentFuelPrice, type FuelPriceRow } from "@/lib/fuelPrice/queries";
@@ -38,19 +38,47 @@ function noSaveResult(replyText: string): RateRequestResult {
   return { routedTo: null, routedId: null, replyText };
 }
 
+interface ResolvedMiles {
+  miles: number;
+  // Always populated — either "N mi" (spoken directly, nothing to verify)
+  // or "Origin label to Destination label" from the geocoder/router's own
+  // resolved locations, shown regardless of whether a mismatch was
+  // detected so a wrong geocode is visible in every reply, not just
+  // flagged ones.
+  laneLabel: string;
+  // Set when the geocoded location's state doesn't match the state
+  // actually spoken — the free OSRM/Nominatim fallback has no
+  // disambiguation, so "Spring Grove" or "Ghent" can silently resolve to
+  // a same-named place in the wrong state entirely.
+  geocodeWarning: string | null;
+}
+
 async function resolveOneWayMiles(
   classification: CaptureClassification,
-): Promise<{ miles: number } | { error: string } | { missing: true }> {
+): Promise<ResolvedMiles | { error: string } | { missing: true }> {
   if (classification.one_way_miles != null) {
-    return { miles: classification.one_way_miles };
+    const miles = classification.one_way_miles;
+    return { miles, laneLabel: `${Math.round(miles * 10) / 10} mi`, geocodeWarning: null };
   }
   if (classification.origin_city && classification.destination_city) {
+    const origin = classification.origin_city;
+    const destination = classification.destination_city;
     try {
-      const distance = await lookupDistance(classification.origin_city, classification.destination_city);
-      return { miles: distance.miles };
+      const distance = await lookupDistance(origin, destination);
+      const roundedMiles = Math.round(distance.miles * 10) / 10;
+      const laneLabel = `${distance.originLabel} to ${distance.destinationLabel} (${roundedMiles} mi)`;
+
+      const originMismatch = looksLikeStateMismatch(origin, distance.originLabel);
+      const destinationMismatch = looksLikeStateMismatch(destination, distance.destinationLabel);
+      const geocodeWarning =
+        originMismatch || destinationMismatch
+          ? `⚠️ Asked for "${origin} to ${destination}" but the mileage lookup resolved to "${distance.originLabel} to ${distance.destinationLabel}" — looks like it may have matched the wrong place. Double-check this lane before quoting it.`
+          : null;
+
+      return { miles: distance.miles, laneLabel, geocodeWarning };
     } catch {
       return {
-        error: `Couldn't look up mileage from ${classification.origin_city} to ${classification.destination_city} — try again or give me the miles directly.`,
+        error: `Couldn't look up mileage from ${origin} to ${destination} — try again or give me the miles directly.`,
       };
     }
   }
@@ -108,6 +136,12 @@ async function calculateFromDefaults(
     );
   }
 
+  if (milesResult.geocodeWarning) {
+    return noSaveResult(
+      `${milesResult.geocodeWarning}\n\nDidn't run the calculation — resend with the miles directly, or a clearer lane, once you've confirmed the right location.`,
+    );
+  }
+
   const overrides = classification.overrides ?? {};
   const ppgResolution = resolvePpg(overrides.ppg, currentFuelPrice, defaults.ppg);
 
@@ -153,10 +187,9 @@ async function calculateFromDefaults(
     outputs as unknown as Record<string, unknown>,
   );
 
-  const laneLabel =
-    classification.origin_city && classification.destination_city
-      ? `${classification.origin_city} to ${classification.destination_city}`
-      : `${Math.round(oneWayMiles * 10) / 10} mi`;
+  // milesResult.laneLabel always reflects the geocoder/router's own
+  // resolved locations (not just what was spoken) — see resolveOneWayMiles.
+  const laneLabel = milesResult.laneLabel;
 
   // Full transparency on what actually drove this number, so the reply
   // alone is trustworthy without opening the Calculator tab to check.
@@ -220,6 +253,12 @@ async function calculateStandalone(
     );
   }
 
+  if ("geocodeWarning" in milesResult && milesResult.geocodeWarning) {
+    return noSaveResult(
+      `${milesResult.geocodeWarning}\n\nDidn't run the calculation — resend with the miles directly, or a clearer lane, once you've confirmed the right location.`,
+    );
+  }
+
   // Every field below this point is guaranteed present given the checks
   // above, except avg speed/MPG/add'l time, which fall back to fleet-
   // typical constants — flagged explicitly in the reply so a stale
@@ -269,10 +308,7 @@ async function calculateStandalone(
 
   const calc = await saveCalculation(userId, null, formulaType, inputs, outputs as unknown as Record<string, unknown>);
 
-  const laneLabel =
-    classification.origin_city && classification.destination_city
-      ? `${classification.origin_city} to ${classification.destination_city}`
-      : `${Math.round(oneWayMiles * 10) / 10} mi`;
+  const laneLabel = (milesResult as ResolvedMiles).laneLabel;
 
   const replyLines = [
     `Standalone quote (not linked to an account):`,
