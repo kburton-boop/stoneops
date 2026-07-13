@@ -29,6 +29,7 @@ function getUserId() {
 type StoredClassification = CaptureClassification & {
   matched_account_id?: string | null;
   is_draft_account?: boolean;
+  rate_reply_text?: string | null;
 };
 
 const SEVERITY_VALUES: CaptureClassification["severity"][] = ["hot", "warm", "resolved"];
@@ -202,9 +203,28 @@ async function handleMessage(message: TelegramMessage) {
   }
 
   if (route.routedTo) {
+    const shouldPersistRateReplyText =
+      classification.kind === "rate_request" && route.routedTo === "rate_calculations" && rateReplyText;
+    // Persisted so a later account correction (tap on the keyboard below)
+    // can restore the full computed breakdown instead of overwriting it
+    // with buildConfirmationText's generic "Filed as a rate calculation"
+    // line — see handleCallbackQuery.
     await supabase
       .from("raw_captures")
-      .update({ routed_to: route.routedTo, routed_id: route.routedId })
+      .update({
+        routed_to: route.routedTo,
+        routed_id: route.routedId,
+        ...(shouldPersistRateReplyText
+          ? {
+              classification: {
+                ...classification,
+                matched_account_id: account?.id ?? null,
+                is_draft_account: resolution.isDraft,
+                rate_reply_text: rateReplyText,
+              },
+            }
+          : {}),
+      })
       .eq("id", capture.id);
   }
 
@@ -371,11 +391,21 @@ async function handleCallbackQuery(callback: TelegramCallbackQuery) {
   const account = classification.matched_account_id
     ? await getAccountById(classification.matched_account_id, userId)
     : null;
+  const routedTo = isRoutedTable(capture.routed_to) ? capture.routed_to : null;
 
-  const updatedText = buildConfirmationText(classification, account?.name ?? null, {
-    routedTo: isRoutedTable(capture.routed_to) ? capture.routed_to : null,
-    routedId: capture.routed_id,
-  });
+  // The rate breakdown's numbers were computed once against whichever
+  // account/defaults were resolved at capture time — correcting the account
+  // tag here doesn't change those inputs/outputs, so the saved breakdown is
+  // still accurate and shouldn't be discarded for buildConfirmationText's
+  // generic "Filed as a rate calculation" line (which has no idea a
+  // computed rate exists at all).
+  const updatedText =
+    routedTo === "rate_calculations" && classification.rate_reply_text
+      ? `${classification.rate_reply_text}\n\n(Account: ${account?.name ?? "none"})`
+      : buildConfirmationText(classification, account?.name ?? null, {
+          routedTo,
+          routedId: capture.routed_id,
+        });
 
   await editMessageText(callback.message.chat.id, callback.message.message_id, updatedText);
   await answerCallbackQuery(callback.id, confirmationSuffix);

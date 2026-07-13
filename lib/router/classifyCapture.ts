@@ -141,9 +141,13 @@ For rate_request captures only, also extract: origin_city and
 destination_city if a lane was spoken (e.g. "Ghent to Louisville" ->
 origin_city "Ghent", destination_city "Louisville"); one_way_miles if
 miles were spoken directly instead of a lane (e.g. "42 miles one way");
-net_tonnage, the net tons for this load if spoken (e.g. "19.5 tons" ->
-19.5); and overrides, any explicit spoken numeric override of a rate
-input for this quote only — this applies to that one calculation and
+net_tonnage, the net tons for this load if spoken — only from an
+explicit weight/tonnage figure (e.g. "19.5 tons" -> 19.5, "18 net tons"
+-> 18). A bare number attached to a different unit, like trailer or dump
+length in feet (e.g. "net is 18ft", "48 foot trailer"), is NOT tonnage —
+leave net_tonnage empty in that case rather than guessing; and
+overrides, any explicit spoken numeric override of a rate input for
+this quote only — this applies to that one calculation and
 never changes the account's saved defaults (e.g. "PPG at 4.60 today" ->
 {"ppg": 4.6}, "target's $95 an hour for this one" ->
 {"target_per_hour": 95}, "target 75 an hour" -> {"target_per_hour": 75},
