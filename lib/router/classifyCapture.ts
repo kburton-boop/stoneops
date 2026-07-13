@@ -200,7 +200,52 @@ empty for anything that isn't about a customer relationship (plant
 issues, tasks, rate requests, general notes).
 
 urgency and severity should both be your best judgment even if the
-capture's kind doesn't use one of them.`;
+capture's kind doesn't use one of them.
+
+GLOSSARY — this coordinator uses industry shorthand constantly; treat
+these as known terms, not ambiguous abbreviations:
+NT = net tons (a weight). GT = gross ton — a PRICING BASIS (rate per
+gross ton), not a weight by itself; "on a GT" or "per GT" describes how
+the rate is quoted, it doesn't supply a tonnage figure. PPG = price per
+gallon (diesel). FSC = fuel surcharge. DOT = Department of
+Transportation. OSW = oversize/overweight (a load or permit
+classification). MPG = miles per gallon. LH = linehaul.
+
+UNIT-CONFUSION GUARDS — confirmed mistakes from real use, guard against
+them explicitly:
+- A bare number followed by "ft"/"foot"/"feet" (e.g. "18ft", "48 foot
+  trailer") is almost always a physical dimension (trailer or dump bed
+  length), never net tonnage — leave net_tonnage empty rather than
+  treating it as tons.
+- A bare number followed by "k" (e.g. "40k", "3.5k") is shorthand for
+  thousands and is ambiguous between dollars and pounds depending on
+  context — "quoting at 40k" in a rate discussion means $40,000/a
+  $40k rate, not 40,000 lbs; "the load's like 3.5k lbs" is clearly
+  weight because "lbs" is stated. Never silently convert a bare "k"
+  figure into net_tonnage (which is in TONS, not thousands of pounds)
+  — if it's genuinely a tonnage figure, it will be stated in tons, not
+  as a bare "k" number.
+
+MULTI-MESSAGE FRAGMENTS — you will sometimes receive several recent
+messages from the same person, sent moments apart, followed by the
+final/most-recent message, formatted as a numbered list of "recent
+messages" plus a final message. This happens when a coordinator answers
+a follow-up question in pieces instead of one message — e.g. "Yes" then
+"Nt 18ft" then "Gt" then "$105/hr after fuel" is one rate_request read
+together (GT-basis pricing, target $105/hr), not four separate notes.
+When you receive this format, classify the COMBINED meaning of all the
+messages together as a single capture, extracting fields from whichever
+message actually stated them. Still apply every guard above exactly as
+you would for a single message — e.g. "18ft" in a fragment is still a
+dimension, not tonnage, even when combined with other fragments; if no
+message in the group actually stated a real tonnage figure, net_tonnage
+stays empty rather than being invented from the dimension.
+
+CORRECTIONS — when the text is a correction of something just said
+("I meant 19.5 tons not 18", "actually make that $110/hr", "correction,
+it's Louisville not Lexington"), extract the CORRECTED/final value into
+the relevant field, not the value being corrected away from — e.g. "I
+meant 19.5, not 18" means net_tonnage is 19.5.`;
 
 const CLASSIFY_TOOL: Anthropic.Tool = {
   name: "classify_capture",
@@ -332,14 +377,31 @@ function normalize(input: Record<string, unknown>): CaptureClassification {
   };
 }
 
-export async function classifyCapture(text: string): Promise<CaptureClassification> {
+// recentContext: prior fragment texts from the same person, chronological
+// (oldest first) — see the MULTI-MESSAGE FRAGMENTS section of the system
+// prompt. Only pass this when the caller has already decided these are
+// probable continuations of one thought (Part 1a/1b); classifyCapture
+// itself doesn't second-guess that decision, though the prompt still asks
+// the model to fall back to classifying just the final message if the
+// fragments genuinely don't relate.
+export async function classifyCapture(
+  text: string,
+  recentContext: string[] = [],
+): Promise<CaptureClassification> {
   const anthropic = getClient();
+
+  const userContent =
+    recentContext.length > 0
+      ? `Recent messages from the same person, sent moments before the final message below (oldest first):\n${recentContext
+          .map((fragment, i) => `${i + 1}. ${fragment}`)
+          .join("\n")}\n\nFinal/most recent message:\n${text}`
+      : text;
 
   const message = await anthropic.messages.create({
     model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
     max_tokens: 512,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: text }],
+    messages: [{ role: "user", content: userContent }],
     tools: [CLASSIFY_TOOL],
     tool_choice: { type: "tool", name: "classify_capture" },
   });

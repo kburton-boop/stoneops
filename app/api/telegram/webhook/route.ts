@@ -10,6 +10,11 @@ import { handleBriefRequest } from "@/lib/router/handleBriefRequest";
 import { detectCallPrep } from "@/lib/router/detectCallPrep";
 import { handleCallPrep } from "@/lib/router/handleCallPrep";
 import { handleDraftEmailRequest } from "@/lib/router/handleDraftEmailRequest";
+import { isCombineTrigger } from "@/lib/router/detectCombineTrigger";
+import { looksLikeCorrection } from "@/lib/router/detectCorrection";
+import { handleCorrection } from "@/lib/router/handleCorrection";
+import { isLikelyContinuationFragment } from "@/lib/router/fragmentHeuristics";
+import { getRecentLinkableFragments, markFragmentsConsumed } from "@/lib/router/fragmentCombine";
 import { setFocus } from "@/lib/userFocus/queries";
 import { transcribeVoice } from "@/lib/transcription/transcribeVoice";
 import { downloadVoice, sendMessage, sendLongMessage, editMessageText, answerCallbackQuery } from "@/lib/telegram/api";
@@ -72,68 +77,22 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-async function handleMessage(message: TelegramMessage) {
-  if (!isAllowedSender(message.from?.id)) {
-    return;
-  }
-
-  const chatId = message.chat.id;
-  const userId = getUserId();
+// The shared core: resolves the account, writes the raw_captures row,
+// routes by kind, and sends the appropriate reply/keyboard — used both
+// for a normal single message and for a combined multi-fragment request
+// (Part 1), so the two paths can't silently diverge in behavior. Returns
+// the new capture's id so callers that combined fragments can mark them
+// consumed afterward. replyPrefix is prepended to whatever final reply
+// text gets sent, e.g. to note that several recent messages were combined.
+async function processClassifiedCapture(
+  chatId: number,
+  userId: string,
+  rawTextForStorage: string,
+  classification: CaptureClassification,
+  audioUrl: string | null,
+  replyPrefix: string = "",
+): Promise<string | null> {
   const supabase = getServiceRoleClient();
-
-  let text: string;
-  let audioUrl: string | null = null;
-
-  if (message.voice) {
-    try {
-      const audio = await downloadVoice(message.voice.file_id);
-      text = await transcribeVoice(audio);
-      audioUrl = message.voice.file_id;
-    } catch (error) {
-      console.error("Voice transcription failed", error);
-      await sendMessage(chatId, "Couldn't transcribe that voice note — try again or type it out.");
-      return;
-    }
-  } else if (message.text) {
-    text = message.text;
-  } else {
-    return;
-  }
-
-  // Call Prep is detected ahead of the normal short-capture classifier —
-  // a long/multi-part message about an account, or an explicit "prep me
-  // for a call with X" trigger, is a fundamentally different shape of
-  // request than a single spoken capture and never goes through
-  // classifyCapture/routeCapture at all.
-  const callPrepDetection = await detectCallPrep(text, userId);
-  if (callPrepDetection.isCallPrep) {
-    try {
-      const result = await handleCallPrep(text, callPrepDetection.accountNameGuess, userId);
-      await sendLongMessage(chatId, result.replyText);
-    } catch (error) {
-      console.error("Call prep generation failed", error);
-      await sendMessage(chatId, "Couldn't generate that call prep — try again in a bit.");
-    }
-    return;
-  }
-
-  let classification: CaptureClassification;
-  try {
-    classification = await classifyCapture(text);
-  } catch (error) {
-    console.error("Classification failed", error);
-    await supabase.from("raw_captures").insert({
-      user_id: userId,
-      source: "telegram",
-      raw_text: text,
-      audio_url: audioUrl,
-      classification: null,
-      routed_to: null,
-      routed_id: null,
-    });
-    await sendMessage(chatId, "Got it, but classification failed — saved as raw text for now.");
-    return;
-  }
 
   const resolution = await resolveAccountAndContacts(classification, userId);
   const account = resolution.account;
@@ -143,7 +102,7 @@ async function handleMessage(message: TelegramMessage) {
     .insert({
       user_id: userId,
       source: "telegram",
-      raw_text: text,
+      raw_text: rawTextForStorage,
       audio_url: audioUrl,
       classification: {
         ...classification,
@@ -159,7 +118,7 @@ async function handleMessage(message: TelegramMessage) {
   if (insertError || !capture) {
     console.error("Failed to write raw_capture", insertError);
     await sendMessage(chatId, "Got it, but saving failed — try again in a bit.");
-    return;
+    return null;
   }
 
   let route: RouteResult;
@@ -195,11 +154,11 @@ async function handleMessage(message: TelegramMessage) {
     route = { routedTo: "user_focus", routedId: focusRow.id };
     focusReplyText = `Focus set: ${focusText}`;
   } else if (classification.kind === "draft_email_request") {
-    const draftResult = await handleDraftEmailRequest(text, account, userId);
+    const draftResult = await handleDraftEmailRequest(rawTextForStorage, account, userId);
     route = { routedTo: draftResult.emailDraftId ? "email_drafts" : null, routedId: draftResult.emailDraftId };
     draftEmailReplyText = draftResult.replyText;
   } else {
-    route = await routeCapture(classification, account, text, userId);
+    route = await routeCapture(classification, account, rawTextForStorage, userId);
   }
 
   if (route.routedTo) {
@@ -233,23 +192,23 @@ async function handleMessage(message: TelegramMessage) {
   // is a read-only lookup with nothing left to correct once answered, and
   // set_focus is a personal directive with no account involved at all.
   if (classification.kind === "general_note") {
-    await sendMessage(chatId, "Noted.");
-    return;
+    await sendMessage(chatId, `${replyPrefix}Noted.`);
+    return capture.id;
   }
 
   if (classification.kind === "brief_request") {
-    await sendMessage(chatId, briefReplyText ?? "Couldn't generate that brief.");
-    return;
+    await sendMessage(chatId, `${replyPrefix}${briefReplyText ?? "Couldn't generate that brief."}`);
+    return capture.id;
   }
 
   if (classification.kind === "set_focus") {
-    await sendMessage(chatId, focusReplyText ?? "Couldn't set that focus.");
-    return;
+    await sendMessage(chatId, `${replyPrefix}${focusReplyText ?? "Couldn't set that focus."}`);
+    return capture.id;
   }
 
   if (classification.kind === "draft_email_request") {
-    await sendLongMessage(chatId, draftEmailReplyText ?? "Couldn't generate that email draft.");
-    return;
+    await sendLongMessage(chatId, `${replyPrefix}${draftEmailReplyText ?? "Couldn't generate that email draft."}`);
+    return capture.id;
   }
 
   if (resolution.isDraft && account) {
@@ -257,8 +216,8 @@ async function handleMessage(message: TelegramMessage) {
       resolution.draftContactName ? ` with contact ${resolution.draftContactName}` : ""
     }`;
     const detailText = rateReplyText ?? buildConfirmationText(classification, account.name, route);
-    await sendMessage(chatId, `${promptLine}\n\n${detailText}`, buildDraftConfirmationKeyboard(capture.id));
-    return;
+    await sendMessage(chatId, `${replyPrefix}${promptLine}\n\n${detailText}`, buildDraftConfirmationKeyboard(capture.id));
+    return capture.id;
   }
 
   let confirmationText = rateReplyText ?? buildConfirmationText(classification, account?.name ?? null, route);
@@ -266,7 +225,192 @@ async function handleMessage(message: TelegramMessage) {
     confirmationText = `${confirmationText}\n${resolution.contactNote}`;
   }
   const keyboard = buildCorrectionKeyboard(capture.id, classification, route.routedTo);
-  await sendMessage(chatId, confirmationText, keyboard);
+  await sendMessage(chatId, `${replyPrefix}${confirmationText}`, keyboard);
+  return capture.id;
+}
+
+async function handleMessage(message: TelegramMessage) {
+  if (!isAllowedSender(message.from?.id)) {
+    return;
+  }
+
+  const chatId = message.chat.id;
+  const userId = getUserId();
+  const supabase = getServiceRoleClient();
+
+  let text: string;
+  let audioUrl: string | null = null;
+
+  if (message.voice) {
+    try {
+      const audio = await downloadVoice(message.voice.file_id);
+      text = await transcribeVoice(audio);
+      audioUrl = message.voice.file_id;
+    } catch (error) {
+      console.error("Voice transcription failed", error);
+      await sendMessage(chatId, "Couldn't transcribe that voice note — try again or type it out.");
+      return;
+    }
+  } else if (message.text) {
+    text = message.text;
+  } else {
+    return;
+  }
+
+  // Part 1b: an explicit "combine my last few messages" trigger takes
+  // priority over everything else — it's an unambiguous command, not
+  // content to classify itself.
+  if (isCombineTrigger(text)) {
+    await handleCombineTrigger(chatId, userId);
+    return;
+  }
+
+  // Part 3: a correction referencing the immediately prior capture also
+  // takes priority over the normal flow and over implicit fragment
+  // combining (Part 1a) — a correction message like "actually make that
+  // 19.5 tons not 18" would otherwise also look like a short numeric
+  // fragment and risk being folded into a new capture instead of updating
+  // the one it's actually correcting.
+  if (looksLikeCorrection(text)) {
+    const result = await handleCorrection(text, userId);
+    if (result.applied) {
+      // The correction updated an existing routed record in place — log
+      // the correction message itself for the audit trail (routed_to
+      // stays null since the actual state change already landed on the
+      // original row, not this one), then stop.
+      await supabase.from("raw_captures").insert({
+        user_id: userId,
+        source: "telegram",
+        raw_text: text,
+        audio_url: audioUrl,
+        classification: { kind: "correction", summary: result.replyText, applied: true },
+        routed_to: null,
+        routed_id: null,
+      });
+      await sendMessage(chatId, result.replyText);
+      return;
+    }
+    // Not applied (nothing recent, unsupported target, or the
+    // recalculation itself came back incomplete) — surface why, then fall
+    // through to normal processing so the message still gets logged
+    // through the ordinary path rather than twice.
+    await sendMessage(chatId, result.replyText);
+  }
+
+  // Call Prep is detected ahead of the normal short-capture classifier —
+  // a long/multi-part message about an account, or an explicit "prep me
+  // for a call with X" trigger, is a fundamentally different shape of
+  // request than a single spoken capture and never goes through
+  // classifyCapture/routeCapture at all.
+  const callPrepDetection = await detectCallPrep(text, userId);
+  if (callPrepDetection.isCallPrep) {
+    try {
+      const result = await handleCallPrep(text, callPrepDetection.accountNameGuess, userId);
+      await sendLongMessage(chatId, result.replyText);
+    } catch (error) {
+      console.error("Call prep generation failed", error);
+      await sendMessage(chatId, "Couldn't generate that call prep — try again in a bit.");
+    }
+    return;
+  }
+
+  // Part 1a: an implicit fragment combine — the message itself reads as a
+  // short continuation (a bare number, a one-word label, a short
+  // affirmation) AND there's something recent and still-unresolved from
+  // this sender to continue. Deliberately conservative on both sides: the
+  // heuristic alone already excludes anything that reads as a complete
+  // sentence, and combining is skipped entirely if there's nothing recent
+  // to attach to.
+  if (isLikelyContinuationFragment(text)) {
+    const fragments = await getRecentLinkableFragments(userId);
+    if (fragments.length > 0) {
+      const priorTexts = fragments.map((f) => f.raw_text).filter((t): t is string => Boolean(t));
+      let classification: CaptureClassification;
+      try {
+        classification = await classifyCapture(text, priorTexts);
+      } catch (error) {
+        console.error("Classification failed", error);
+        await sendMessage(chatId, "Got it, but classification failed — try again in a bit.");
+        return;
+      }
+
+      const combinedRawText = [...priorTexts, text].join("\n");
+      const newCaptureId = await processClassifiedCapture(chatId, userId, combinedRawText, classification, audioUrl);
+      if (newCaptureId) {
+        await markFragmentsConsumed(
+          fragments.map((f) => f.id),
+          newCaptureId,
+        );
+      }
+      return;
+    }
+  }
+
+  let classification: CaptureClassification;
+  try {
+    classification = await classifyCapture(text);
+  } catch (error) {
+    console.error("Classification failed", error);
+    await supabase.from("raw_captures").insert({
+      user_id: userId,
+      source: "telegram",
+      raw_text: text,
+      audio_url: audioUrl,
+      classification: null,
+      routed_to: null,
+      routed_id: null,
+    });
+    await sendMessage(chatId, "Got it, but classification failed — saved as raw text for now.");
+    return;
+  }
+
+  await processClassifiedCapture(chatId, userId, text, classification, audioUrl);
+}
+
+// Part 1b: explicit "combine my last few messages" — pulls the same
+// candidate set as the implicit path (Part 1a), classifies them together
+// treating the most recent as the anchor message and the rest as context,
+// then processes the result exactly like any other capture.
+async function handleCombineTrigger(chatId: number, userId: string): Promise<void> {
+  const fragments = await getRecentLinkableFragments(userId);
+  if (fragments.length === 0) {
+    await sendMessage(chatId, "Nothing recent and unresolved to combine.");
+    return;
+  }
+
+  const texts = fragments.map((f) => f.raw_text).filter((t): t is string => Boolean(t));
+  if (texts.length === 0) {
+    await sendMessage(chatId, "Nothing recent and unresolved to combine.");
+    return;
+  }
+
+  const anchor = texts[texts.length - 1];
+  const priorTexts = texts.slice(0, -1);
+
+  let classification: CaptureClassification;
+  try {
+    classification = await classifyCapture(anchor, priorTexts);
+  } catch (error) {
+    console.error("Classification failed", error);
+    await sendMessage(chatId, "Got it, but classification failed — try again in a bit.");
+    return;
+  }
+
+  const combinedRawText = texts.join("\n");
+  const newCaptureId = await processClassifiedCapture(
+    chatId,
+    userId,
+    combinedRawText,
+    classification,
+    null,
+    `(Combined your last ${fragments.length} message${fragments.length === 1 ? "" : "s"})\n\n`,
+  );
+  if (newCaptureId) {
+    await markFragmentsConsumed(
+      fragments.map((f) => f.id),
+      newCaptureId,
+    );
+  }
 }
 
 async function handleCallbackQuery(callback: TelegramCallbackQuery) {

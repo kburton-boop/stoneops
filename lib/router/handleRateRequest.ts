@@ -3,7 +3,7 @@ import type { AccountMatch } from "./matchAccount";
 import { getRateDefaults, type RateDefaultsRow } from "@/lib/rateCalculator/rateDefaults";
 import { lookupDistance, looksLikeStateMismatch } from "@/lib/rateCalculator/distance";
 import { calculateTypeA, calculateTypeB } from "@/lib/rateCalculator/calculate";
-import { saveCalculation } from "@/lib/rateCalculator/queries";
+import { saveCalculation, updateCalculation, type RateCalculationRow } from "@/lib/rateCalculator/queries";
 import { getCurrentFuelPrice, type FuelPriceRow } from "@/lib/fuelPrice/queries";
 import { resolvePpg, formatPpgLine } from "@/lib/rateCalculator/resolvePpg";
 
@@ -36,6 +36,23 @@ const STANDALONE_DEFAULT_TIME_ADD_HOURS = 2;
 
 function noSaveResult(replyText: string): RateRequestResult {
   return { routedTo: null, routedId: null, replyText };
+}
+
+// Used by Part 3's self-correction flow: passing an existing calculation
+// id updates that same rate_calculations row in place instead of inserting
+// a new, conflicting one for what's really the same request.
+async function persistCalculation(
+  existingCalculationId: string | null | undefined,
+  userId: string,
+  accountId: string | null,
+  formulaType: RateCalculationRow["formula_type"],
+  inputs: Record<string, unknown>,
+  outputs: Record<string, unknown>,
+): Promise<RateCalculationRow> {
+  if (existingCalculationId) {
+    return updateCalculation(existingCalculationId, formulaType, inputs, outputs);
+  }
+  return saveCalculation(userId, accountId, formulaType, inputs, outputs);
 }
 
 interface ResolvedMiles {
@@ -89,6 +106,7 @@ export async function handleRateRequest(
   classification: CaptureClassification,
   account: AccountMatch | null,
   userId: string,
+  existingCalculationId: string | null = null,
 ): Promise<RateRequestResult> {
   // Fetched once and threaded through both paths below — PPG now comes
   // from the live EIA PADD 2 price by default (spoken override still wins,
@@ -100,7 +118,7 @@ export async function handleRateRequest(
   if (account && account.kind === "customer") {
     const defaults = await getRateDefaults(account.id);
     if (defaults) {
-      return calculateFromDefaults(classification, account, defaults, userId, currentFuelPrice);
+      return calculateFromDefaults(classification, account, defaults, userId, currentFuelPrice, existingCalculationId);
     }
     return noSaveResult(
       `No saved rate defaults for ${account.name} yet — set them up in the Calculator tab first, or tell me all the inputs and I'll calculate it this once without saving defaults.`,
@@ -111,7 +129,7 @@ export async function handleRateRequest(
   // ad-hoc calculation from whatever was actually spoken, rather than
   // silently letting this fall through to the generic customer_topics
   // catch-all with nothing calculated.
-  return calculateStandalone(classification, userId, currentFuelPrice);
+  return calculateStandalone(classification, userId, currentFuelPrice, existingCalculationId);
 }
 
 async function calculateFromDefaults(
@@ -120,6 +138,7 @@ async function calculateFromDefaults(
   defaults: RateDefaultsRow,
   userId: string,
   currentFuelPrice: FuelPriceRow | null,
+  existingCalculationId: string | null = null,
 ): Promise<RateRequestResult> {
   const milesResult = await resolveOneWayMiles(classification);
   if ("error" in milesResult) return noSaveResult(milesResult.error);
@@ -179,7 +198,8 @@ async function calculateFromDefaults(
     inputs.destination = classification.destination_city;
   }
 
-  const calc = await saveCalculation(
+  const calc = await persistCalculation(
+    existingCalculationId,
     userId,
     account.id,
     defaults.formula_type,
@@ -231,6 +251,7 @@ async function calculateStandalone(
   classification: CaptureClassification,
   userId: string,
   currentFuelPrice: FuelPriceRow | null,
+  existingCalculationId: string | null = null,
 ): Promise<RateRequestResult> {
   const overrides = classification.overrides ?? {};
 
@@ -306,7 +327,14 @@ async function calculateStandalone(
     inputs.destination = classification.destination_city;
   }
 
-  const calc = await saveCalculation(userId, null, formulaType, inputs, outputs as unknown as Record<string, unknown>);
+  const calc = await persistCalculation(
+    existingCalculationId,
+    userId,
+    null,
+    formulaType,
+    inputs,
+    outputs as unknown as Record<string, unknown>,
+  );
 
   const laneLabel = (milesResult as ResolvedMiles).laneLabel;
 
